@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
@@ -38,13 +39,25 @@ export default function AdminSidebar() {
 
   return (
     <Sidebar collapsible="icon" variant="sidebar">
-      <SidebarHeader className=" pt-2">
+      <SidebarHeader className="pt-2">
         <Link href="/admin" className="flex items-center gap-3 rounded-md py-2">
-          <div className="flex flex-col items-center justify-center w-full gap-1">
-            <div className="text-2xl font-bold text-primary">BubbleBliss</div>
-            <div className="text-xs text-muted-foreground tracking-wider">
-              CAFE ADMIN
-            </div>
+          <div className="flex items-center justify-center w-full py-1">
+            <Image
+              src="/bbl-black.png"
+              alt="BubbleBliss"
+              width={160}
+              height={48}
+              className="block dark:hidden"
+              priority
+            />
+            <Image
+              src="/bbl-white.png"
+              alt="BubbleBliss"
+              width={160}
+              height={48}
+              className="hidden dark:block"
+              priority
+            />
           </div>
         </Link>
       </SidebarHeader>
