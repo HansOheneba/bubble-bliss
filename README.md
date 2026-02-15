@@ -1,8 +1,24 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# BubbleBliss Cafe Admin
+
+This is the admin panel for BubbleBliss Cafe, built with [Next.js](https://nextjs.org). Manage orders, products, inventory, customers, and all cafe operations from this dashboard.
+
+## Features
+
+- 🎨 Dark theme with custom BubbleBliss brand colors
+- 📦 Orders management
+- 🛍️ Products & inventory management
+- 👥 Customer management
+- 📊 Reports and analytics
 
 ## Getting Started
 
-First, run the development server:
+First, install dependencies:
+
+```bash
+npm install
+```
+
+Then, run the development server:
 
 ```bash
 npm run dev
