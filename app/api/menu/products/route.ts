@@ -38,7 +38,7 @@ export async function GET(req: NextRequest) {
     if (!branch) {
       return NextResponse.json(
         { message: `Branch "${branchSlug}" not found or inactive` },
-        { status: 404 }
+        { status: 404 },
       );
     }
     branchId = (branch as { id: number }).id;
@@ -56,7 +56,7 @@ export async function GET(req: NextRequest) {
     if (!category) {
       return NextResponse.json(
         { message: `Category "${categorySlug}" not found` },
-        { status: 404 }
+        { status: 404 },
       );
     }
     categoryId = (category as { id: number }).id;
@@ -71,7 +71,7 @@ export async function GET(req: NextRequest) {
       category:categories(*),
       variants:product_variants(*),
       branch_availability:product_branch_availability(branch_id)
-      `
+      `,
     )
     .eq("is_active", true)
     .order("sort_order", { ascending: true });
@@ -86,7 +86,7 @@ export async function GET(req: NextRequest) {
     console.error("Products fetch error:", error);
     return NextResponse.json(
       { message: "Failed to fetch products" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 
@@ -104,7 +104,7 @@ export async function GET(req: NextRequest) {
   // Sort variants by sort_order within each product
   const shaped = filtered.map((p) => {
     const variants = [...p.variants].sort(
-      (a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0)
+      (a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0),
     );
 
     return {

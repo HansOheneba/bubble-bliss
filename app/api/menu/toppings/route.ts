@@ -32,7 +32,7 @@ export async function GET(req: NextRequest) {
     if (!branch) {
       return NextResponse.json(
         { message: `Branch "${branchSlug}" not found or inactive` },
-        { status: 404 }
+        { status: 404 },
       );
     }
     branchId = (branch as { id: number }).id;
@@ -44,7 +44,7 @@ export async function GET(req: NextRequest) {
       `
       *,
       branch_availability:topping_branch_availability(branch_id)
-      `
+      `,
     )
     .eq("is_active", true)
     .eq("in_stock", true)
@@ -54,7 +54,7 @@ export async function GET(req: NextRequest) {
     console.error("Toppings fetch error:", error);
     return NextResponse.json(
       { message: "Failed to fetch toppings" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 
