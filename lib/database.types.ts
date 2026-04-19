@@ -141,6 +141,7 @@ export type Database = {
           notes: string | null;
           status: string | null;
           payment_status: string | null;
+          payment_method: string;
           total_pesewas: number;
           client_reference: string;
           hubtel_checkout_id: string | null;
@@ -149,6 +150,7 @@ export type Database = {
           branch_id: number | null;
           order_source: string | null;
           order_number: string | null;
+          teller_id: number | null;
         };
         Insert: {
           phone: string;
@@ -157,6 +159,7 @@ export type Database = {
           notes?: string | null;
           status?: string | null;
           payment_status?: string | null;
+          payment_method?: string;
           total_pesewas: number;
           client_reference: string;
           hubtel_checkout_id?: string | null;
@@ -165,6 +168,7 @@ export type Database = {
           branch_id?: number | null;
           order_source?: string | null;
           order_number?: string | null;
+          teller_id?: number | null;
         };
         Update: {
           phone?: string;
@@ -173,6 +177,7 @@ export type Database = {
           notes?: string | null;
           status?: string | null;
           payment_status?: string | null;
+          payment_method?: string;
           total_pesewas?: number;
           client_reference?: string;
           hubtel_checkout_id?: string | null;
@@ -180,6 +185,7 @@ export type Database = {
           branch_id?: number | null;
           order_source?: string | null;
           order_number?: string | null;
+          teller_id?: number | null;
         };
       };
       order_items: {
@@ -275,6 +281,29 @@ export type Database = {
           branch_id?: number;
         };
       };
+      tellers: {
+        Row: {
+          id: number;
+          email: string;
+          name: string;
+          branch_id: number;
+          is_active: boolean;
+          created_at: string | null;
+        };
+        Insert: {
+          email: string;
+          name: string;
+          branch_id: number;
+          is_active?: boolean;
+          created_at?: string | null;
+        };
+        Update: {
+          email?: string;
+          name?: string;
+          branch_id?: number;
+          is_active?: boolean;
+        };
+      };
       pos_users: {
         Row: {
           id: number;
@@ -317,6 +346,7 @@ export type OrderItem = Database["public"]["Tables"]["order_items"]["Row"];
 export type OrderItemTopping =
   Database["public"]["Tables"]["order_item_toppings"]["Row"];
 export type PosUser = Database["public"]["Tables"]["pos_users"]["Row"];
+export type Teller = Database["public"]["Tables"]["tellers"]["Row"];
 
 export type OrderWithItems = Order & {
   items: (OrderItem & { toppings: OrderItemTopping[] })[];

@@ -21,6 +21,7 @@ import {
   Package,
   ClipboardList,
   Tag,
+  Users,
   LifeBuoy,
   LogOut,
 } from "lucide-react";
@@ -31,6 +32,7 @@ const nav = [
   { label: "Products", href: "/admin/products", icon: ShoppingBag },
   { label: "Toppings", href: "/admin/inventory", icon: Package },
   { label: "Categories", href: "/admin/categories", icon: Tag },
+  { label: "Tellers", href: "/admin/tellers", icon: Users },
 ];
 
 export default function AdminSidebar() {
