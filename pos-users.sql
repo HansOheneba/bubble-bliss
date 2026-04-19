@@ -1,6 +1,17 @@
 -- ============================================================
--- POS Users table
 -- Run this in your Supabase SQL editor
+-- ============================================================
+
+-- 1. Add email column to branches
+ALTER TABLE public.branches
+  ADD COLUMN IF NOT EXISTS email text;
+
+-- Set branch emails (update these to your real addresses)
+UPDATE public.branches SET email = 'accra@bubbleblisscafe.com'     WHERE slug = 'accra';
+UPDATE public.branches SET email = 'capecoast@bubbleblisscafe.com' WHERE slug = 'cape-coast';
+
+-- ============================================================
+-- 2. POS Users table
 -- ============================================================
 
 CREATE TABLE public.pos_users (

@@ -14,16 +14,19 @@ export type Database = {
           id: number;
           slug: string;
           name: string;
+          email: string | null;
           is_active: boolean | null;
         };
         Insert: {
           slug: string;
           name: string;
+          email?: string | null;
           is_active?: boolean | null;
         };
         Update: {
           slug?: string;
           name?: string;
+          email?: string | null;
           is_active?: boolean | null;
         };
       };
