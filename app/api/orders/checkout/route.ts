@@ -1,6 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase";
 import { normalisePhone, initiateHubtelCheckout } from "@/lib/hubtel";
+import type {
+  Branch,
+  Product,
+  ProductVariant,
+  Topping,
+} from "@/lib/database.types";
 
 // ── Request shape ─────────────────────────────────────────────────────────────
 
@@ -77,23 +83,20 @@ export async function POST(req: NextRequest) {
   // ── Basic validation ──────────────────────────────────────────────────────
 
   if (!phone || typeof phone !== "string") {
-    return NextResponse.json(
-      { message: "phone is required" },
-      { status: 400 }
-    );
+    return NextResponse.json({ message: "phone is required" }, { status: 400 });
   }
 
   if (!locationText || typeof locationText !== "string") {
     return NextResponse.json(
       { message: "locationText is required" },
-      { status: 400 }
+      { status: 400 },
     );
   }
 
   if (!Array.isArray(items) || items.length === 0) {
     return NextResponse.json(
       { message: "items must be a non-empty array" },
-      { status: 400 }
+      { status: 400 },
     );
   }
 
@@ -101,7 +104,7 @@ export async function POST(req: NextRequest) {
   if (!/^233\d{9}$/.test(normalisedPhone)) {
     return NextResponse.json(
       { message: "Invalid phone number — expected 10-digit Ghanaian number" },
-      { status: 400 }
+      { status: 400 },
     );
   }
 
@@ -112,22 +115,23 @@ export async function POST(req: NextRequest) {
   let branchId: number | null = null;
 
   if (branchSlug) {
-    const { data: branch } = await db
+    const { data: branchData } = await db
       .from("branches")
-      .select("id, is_active")
+      .select("*")
       .eq("slug", branchSlug)
       .single();
+    const branch = branchData as Branch | null;
 
     if (!branch) {
       return NextResponse.json(
         { message: `Branch "${branchSlug}" not found` },
-        { status: 400 }
+        { status: 400 },
       );
     }
     if (!branch.is_active) {
       return NextResponse.json(
         { message: `Branch "${branchSlug}" is currently inactive` },
-        { status: 400 }
+        { status: 400 },
       );
     }
     branchId = branch.id;
@@ -144,28 +148,29 @@ export async function POST(req: NextRequest) {
     if (!productId) {
       return NextResponse.json(
         { message: `Item ${i + 1}: productId is required` },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
     if (!item.quantity || item.quantity < 1) {
       return NextResponse.json(
         { message: `Item ${i + 1}: quantity must be at least 1` },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
     // Fetch + validate product
-    const { data: product } = await db
+    const { data: productData } = await db
       .from("products")
-      .select("id, name, price_in_pesewas, is_active, in_stock")
+      .select("*")
       .eq("id", productId)
       .single();
+    const product = productData as Product | null;
 
     if (!product) {
       return NextResponse.json(
         { message: `Item ${i + 1}: product ${productId} not found` },
-        { status: 400 }
+        { status: 400 },
       );
     }
     if (!product.is_active) {
@@ -173,13 +178,13 @@ export async function POST(req: NextRequest) {
         {
           message: `Item ${i + 1}: product "${product.name}" is not currently available`,
         },
-        { status: 400 }
+        { status: 400 },
       );
     }
     if (!product.in_stock) {
       return NextResponse.json(
         { message: `Item ${i + 1}: product "${product.name}" is out of stock` },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
@@ -190,18 +195,19 @@ export async function POST(req: NextRequest) {
 
     if (item.variantId) {
       const vid = Number(item.variantId);
-      const { data: variant } = await db
+      const { data: variantData } = await db
         .from("product_variants")
-        .select("id, label, price_in_pesewas, product_id")
+        .select("*")
         .eq("id", vid)
         .single();
+      const variant = variantData as ProductVariant | null;
 
       if (!variant || variant.product_id !== productId) {
         return NextResponse.json(
           {
             message: `Item ${i + 1}: variant ${vid} not found for product ${productId}`,
           },
-          { status: 400 }
+          { status: 400 },
         );
       }
 
@@ -215,7 +221,7 @@ export async function POST(req: NextRequest) {
         {
           message: `Item ${i + 1}: product "${product.name}" requires a size variant to be selected`,
         },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
@@ -226,16 +232,17 @@ export async function POST(req: NextRequest) {
     for (let t = 0; t < inputToppings.length; t++) {
       const toppingId = Number(inputToppings[t].toppingId);
 
-      const { data: topping } = await db
+      const { data: toppingData } = await db
         .from("toppings")
-        .select("id, name, price_in_pesewas, is_active, in_stock")
+        .select("*")
         .eq("id", toppingId)
         .single();
+      const topping = toppingData as Topping | null;
 
       if (!topping) {
         return NextResponse.json(
           { message: `Item ${i + 1}: topping ${toppingId} not found` },
-          { status: 400 }
+          { status: 400 },
         );
       }
       if (!topping.is_active) {
@@ -243,7 +250,7 @@ export async function POST(req: NextRequest) {
           {
             message: `Item ${i + 1}: topping "${topping.name}" is not currently available`,
           },
-          { status: 400 }
+          { status: 400 },
         );
       }
       if (!topping.in_stock) {
@@ -251,7 +258,7 @@ export async function POST(req: NextRequest) {
           {
             message: `Item ${i + 1}: topping "${topping.name}" is out of stock`,
           },
-          { status: 400 }
+          { status: 400 },
         );
       }
 
@@ -265,7 +272,7 @@ export async function POST(req: NextRequest) {
 
     const toppingTotal = processedToppings.reduce(
       (sum, t) => sum + t.appliedPesewas,
-      0
+      0,
     );
     const lineTotalPesewas = (unitPesewas + toppingTotal) * item.quantity;
 
@@ -286,21 +293,18 @@ export async function POST(req: NextRequest) {
 
   const totalPesewas = processedItems.reduce(
     (sum, item) => sum + item.lineTotalPesewas,
-    0
+    0,
   );
 
   // ── Generate client reference ─────────────────────────────────────────────
 
-  const clientReference = crypto
-    .randomUUID()
-    .replace(/-/g, "")
-    .slice(0, 32);
+  const clientReference = crypto.randomUUID().replace(/-/g, "").slice(0, 32);
 
   // ── Insert order ──────────────────────────────────────────────────────────
 
   const now = new Date().toISOString();
 
-  const { data: order, error: orderError } = await db
+  const { data: orderData, error: orderError } = await db
     .from("orders")
     .insert({
       phone: normalisedPhone,
@@ -315,31 +319,31 @@ export async function POST(req: NextRequest) {
       order_source: orderSource ?? "online",
       created_at: now,
       updated_at: now,
-    })
+    } as never)
     .select("id")
     .single();
 
-  if (orderError || !order) {
+  if (orderError || !orderData) {
     console.error("Order insert error:", orderError);
     return NextResponse.json(
       { message: "Failed to create order" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 
-  const orderId = order.id;
+  const orderId = (orderData as { id: number }).id;
   const orderNumber = `BB-${orderId}`;
 
   // Set order_number now that we have the id
   await db
     .from("orders")
-    .update({ order_number: orderNumber })
+    .update({ order_number: orderNumber } as never)
     .eq("id", orderId);
 
   // ── Insert order_items + order_item_toppings ──────────────────────────────
 
   for (const item of processedItems) {
-    const { data: orderItem, error: itemError } = await db
+    const { data: orderItemData, error: itemError } = await db
       .from("order_items")
       .insert({
         order_id: orderId,
@@ -352,26 +356,28 @@ export async function POST(req: NextRequest) {
         sugar_level: item.sugarLevel,
         spice_level: item.spiceLevel,
         note: item.note,
-      })
+      } as never)
       .select("id")
       .single();
 
-    if (itemError || !orderItem) {
+    if (itemError || !orderItemData) {
       console.error("Order item insert error:", itemError);
       continue; // order is saved — don't fail the whole request
     }
+
+    const orderItemId = (orderItemData as { id: string }).id;
 
     if (item.toppings.length > 0) {
       const { error: toppingError } = await db
         .from("order_item_toppings")
         .insert(
           item.toppings.map((t) => ({
-            order_item_id: orderItem.id,
+            order_item_id: orderItemId,
             topping_id: t.toppingId,
             topping_name: t.toppingName,
             topping_base_pesewas: t.basePesewas,
             price_applied_pesewas: t.appliedPesewas,
-          }))
+          })) as never,
         );
 
       if (toppingError) {
@@ -399,7 +405,7 @@ export async function POST(req: NextRequest) {
   if ("checkoutId" in hubtelResult) {
     await db
       .from("orders")
-      .update({ hubtel_checkout_id: hubtelResult.checkoutId })
+      .update({ hubtel_checkout_id: hubtelResult.checkoutId } as never)
       .eq("id", orderId);
   } else {
     console.error("Hubtel initiate error:", hubtelResult.error);

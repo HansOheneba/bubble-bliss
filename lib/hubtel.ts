@@ -90,7 +90,7 @@ export async function sendSmsConfirmation(phone: string): Promise<void> {
   }
 
   const credentials = Buffer.from(`${clientId}:${clientSecret}`).toString(
-    "base64"
+    "base64",
   );
 
   const params = new URLSearchParams({
@@ -110,7 +110,7 @@ export async function sendSmsConfirmation(phone: string): Promise<void> {
         headers: {
           Authorization: `Basic ${credentials}`,
         },
-      }
+      },
     );
     if (!res.ok) {
       console.error("SMS send failed with status:", res.status);
