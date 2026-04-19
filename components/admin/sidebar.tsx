@@ -3,6 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { SignOutButton } from "@clerk/nextjs";
 import {
   Sidebar,
   SidebarHeader,
@@ -16,11 +17,10 @@ import {
 
 import {
   LayoutDashboard,
-  Users,
   ShoppingBag,
   Package,
   ClipboardList,
-  BarChart3,
+  Tag,
   LifeBuoy,
   LogOut,
 } from "lucide-react";
@@ -29,9 +29,8 @@ const nav = [
   { label: "Dashboard", href: "/admin", icon: LayoutDashboard },
   { label: "Orders", href: "/admin/orders", icon: ClipboardList },
   { label: "Products", href: "/admin/products", icon: ShoppingBag },
-  { label: "Inventory", href: "/admin/inventory", icon: Package },
-  { label: "Customers", href: "/admin/customers", icon: Users },
-  { label: "Reports", href: "/admin/reports", icon: BarChart3 },
+  { label: "Toppings", href: "/admin/inventory", icon: Package },
+  { label: "Categories", href: "/admin/categories", icon: Tag },
 ];
 
 export default function AdminSidebar() {
@@ -103,16 +102,12 @@ export default function AdminSidebar() {
           </SidebarMenuItem>
 
           <SidebarMenuItem>
-            <SidebarMenuButton
-              tooltip="Sign out"
-              onClick={() => {
-                // replace with your auth signOut()
-                console.log("sign out");
-              }}
-            >
-              <LogOut />
-              <span>Sign out</span>
-            </SidebarMenuButton>
+            <SignOutButton>
+              <SidebarMenuButton tooltip="Sign out">
+                <LogOut />
+                <span>Sign out</span>
+              </SidebarMenuButton>
+            </SignOutButton>
           </SidebarMenuItem>
         </SidebarMenu>
       </SidebarFooter>

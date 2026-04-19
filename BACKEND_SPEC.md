@@ -1,0 +1,466 @@
+# Bubble Bliss — Backend API Specification for Hubtel Ordering Flow
+
+This document is the complete specification for the backend service that powers the Bubble Bliss ordering and payment flow. The frontend (Next.js) handles display and UX only. All pricing, order creation, and payment link generation happens on the backend.
+
+---
+
+## Architecture Overview
+
+```
+Frontend (Next.js)                   Backend (Your Server)              Hubtel
+      │                                      │                              │
+      │  POST /checkout                      │                              │
+      │ ─────────────────────────────────►   │                              │
+      │  { phone, location, items… }         │  POST /items/initiate        │
+      │                                      │ ─────────────────────────►   │
+      │                                      │  ◄─────────────────────────  │
+      │                                      │  { checkoutUrl,              │
+      │  ◄─────────────────────────────────  │    checkoutDirectUrl,        │
+      │  { clientReference,                  │    checkoutId }              │
+      │    checkoutUrl,                      │                              │
+      │    checkoutDirectUrl,                │                              │
+      │    totalGhs }                        │                              │
+      │                                      │                              │
+      │  [User pays in Hubtel iframe]        │                              │
+      │                                      │  POST /api/orders/callback   │
+      │                                      │ ◄─────────────────────────   │
+      │                                      │  { ClientReference, Status } │
+      │                                      │                              │
+      │  GET /orders/:ref/status             │                              │
+      │ ─────────────────────────────────►   │                              │
+      │  ◄─────────────────────────────────  │                              │
+      │  { status, paymentStatus }           │                              │
+```
+
+**Core principle:** The frontend never calculates totals. It sends item IDs, quantities, and customisation choices. The backend prices everything from the database and generates the Hubtel payment link. This prevents price tampering.
+
+---
+
+## Environment Variables Required
+
+```env
+# Hubtel Payment API (checkout initiation)
+HUBTEL_API_ID=
+HUBTEL_API_KEY=
+HUBTEL_MERCHANT_ACCOUNT=
+
+# Hubtel SMS API (order confirmation SMS)
+HUBTEL_CLIENT_ID=
+HUBTEL_CLIENT_SECRET=
+HUBTEL_SENDER_ID=
+
+# URL the backend is hosted at (for building callback/return URLs)
+SITE_URL=https://yourdomain.com
+
+# The frontend's origin — used so callback redirect URLs point back to the frontend
+FRONTEND_URL=https://bubblebliss.com
+```
+
+---
+
+## Database Tables (Supabase / PostgreSQL)
+
+The backend reads from these tables. Schema must match exactly.
+
+### `products`
+
+| column             | type     | notes                              |
+| ------------------ | -------- | ---------------------------------- |
+| `id`               | uuid/int | primary key                        |
+| `name`             | text     |                                    |
+| `price_in_pesewas` | int      | null if product requires a variant |
+| `is_active`        | bool     |                                    |
+| `in_stock`         | bool     |                                    |
+
+### `product_variants`
+
+| column             | type          | notes                 |
+| ------------------ | ------------- | --------------------- |
+| `id`               | uuid/int      | primary key           |
+| `product_id`       | fk → products |                       |
+| `label`            | text          | e.g. "Small", "Large" |
+| `price_in_pesewas` | int           |                       |
+
+### `toppings`
+
+| column             | type     | notes       |
+| ------------------ | -------- | ----------- |
+| `id`               | uuid/int | primary key |
+| `name`             | text     |             |
+| `price_in_pesewas` | int      |             |
+| `is_active`        | bool     |             |
+| `in_stock`         | bool     |             |
+
+### `branches`
+
+| column      | type | notes       |
+| ----------- | ---- | ----------- |
+| `id`        | int  | primary key |
+| `slug`      | text | unique      |
+| `is_active` | bool |             |
+
+### `orders`
+
+| column               | type          | notes                                                         |
+| -------------------- | ------------- | ------------------------------------------------------------- |
+| `id`                 | int/uuid      | primary key                                                   |
+| `order_number`       | text          | human-readable, auto-generated                                |
+| `client_reference`   | text          | unique 32-char UUID hex, generated by backend                 |
+| `phone`              | text          | normalised to `233XXXXXXXXX`                                  |
+| `customer_name`      | text          | nullable                                                      |
+| `location_text`      | text          | delivery address string                                       |
+| `notes`              | text          | nullable                                                      |
+| `status`             | text          | `pending` → `confirmed` → `preparing` → `ready` → `delivered` |
+| `payment_status`     | text          | `unpaid` → `paid` / `failed`                                  |
+| `total_pesewas`      | int           | backend-calculated, never trusted from client                 |
+| `hubtel_checkout_id` | text          | returned by Hubtel on initiation, store this                  |
+| `branch_id`          | fk → branches | nullable                                                      |
+| `order_source`       | text          | `online` or `instore`                                         |
+| `created_at`         | timestamptz   |                                                               |
+| `updated_at`         | timestamptz   |                                                               |
+
+### `order_items`
+
+| column          | type                  | notes                           |
+| --------------- | --------------------- | ------------------------------- |
+| `id`            | uuid/int              | primary key                     |
+| `order_id`      | fk → orders           |                                 |
+| `product_id`    | fk → products         |                                 |
+| `variant_id`    | fk → product_variants | nullable                        |
+| `product_name`  | text                  | snapshot at time of order       |
+| `variant_label` | text                  | snapshot, nullable              |
+| `unit_pesewas`  | int                   | price per unit at time of order |
+| `quantity`      | int                   |                                 |
+| `sugar_level`   | text                  | nullable                        |
+| `spice_level`   | text                  | nullable                        |
+| `note`          | text                  | nullable                        |
+
+### `order_item_toppings`
+
+| column                  | type             | notes                                            |
+| ----------------------- | ---------------- | ------------------------------------------------ |
+| `id`                    | uuid/int         | primary key                                      |
+| `order_item_id`         | fk → order_items |                                                  |
+| `topping_id`            | fk → toppings    |                                                  |
+| `topping_name`          | text             | snapshot                                         |
+| `topping_base_pesewas`  | int              | the topping's listed price                       |
+| `price_applied_pesewas` | int              | actual charge (first topping is always 0 — free) |
+
+---
+
+## API Endpoints
+
+### 1. `POST /api/orders/checkout`
+
+The main endpoint. Frontend calls this when the user taps "Place Order".
+
+#### Request Body
+
+```json
+{
+  "phone": "0244123456",
+  "locationText": "15 Oxford Street, Osu, Accra",
+  "payeeName": "Kwame Mensah",
+  "payeeEmail": "kwame@example.com",
+  "notes": "Extra napkins please",
+  "branchSlug": "osu",
+  "orderSource": "online",
+  "items": [
+    {
+      "productId": "abc123",
+      "variantId": "def456",
+      "quantity": 2,
+      "sugarLevel": "50%",
+      "spiceLevel": null,
+      "note": "Less ice",
+      "toppings": [{ "toppingId": "t001" }, { "toppingId": "t002" }]
+    }
+  ]
+}
+```
+
+**Field rules:**
+
+- `phone` — required. Accept `0XXXXXXXXX` or `233XXXXXXXXX`. Normalise to `233XXXXXXXXX` before storing.
+- `locationText` — required string.
+- `items` — required, non-empty array.
+- `payeeName`, `payeeEmail`, `notes`, `branchSlug` — all optional.
+- `orderSource` — `"online"` (default) or `"instore"`.
+- `variantId` — optional. Required only when the product has no base `price_in_pesewas`.
+- `toppings` — optional array. **First topping is always free** (`price_applied_pesewas = 0`). All subsequent toppings are charged at their listed `price_in_pesewas`.
+
+#### Backend Processing Steps
+
+1. **Validate** all required fields and phone format.
+2. **Resolve branch** from `branchSlug` if provided. Reject if branch not found or inactive.
+3. **For each item:**
+   - Fetch product by `productId`. Reject if not found, `is_active = false`, or `in_stock = false`.
+   - If `variantId` is provided, fetch the variant. Reject if not found or doesn't belong to this product.
+   - Determine `unit_pesewas`: use variant price if variant provided, else product base price. Reject if no price is resolvable.
+   - For each topping: fetch by `toppingId`, reject if not found, inactive, or out of stock. First topping free, rest charged.
+   - Calculate line total: `(unit_pesewas + sum(toppingPrices)) * quantity`
+4. **Sum all line totals** → `total_pesewas`.
+5. **Generate `clientReference`**: 32-char hex UUID (e.g. `crypto.randomUUID().replace(/-/g,'').slice(0,32)`). Must be unique.
+6. **Insert** the `orders` row with `status = 'pending'`, `payment_status = 'unpaid'`.
+7. **Insert** all `order_items` rows, then all `order_item_toppings` rows.
+8. **Call Hubtel** to initiate checkout (see Hubtel section below).
+9. **Store** the Hubtel `checkoutId` returned in the order row.
+10. **Return** the response to the frontend.
+
+#### Success Response `200`
+
+```json
+{
+  "orderId": 1042,
+  "orderNumber": "BB-1042",
+  "clientReference": "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4",
+  "status": "pending",
+  "totalGhs": 85.0,
+  "totalPesewas": 8500,
+  "message": "Order placed successfully",
+  "checkoutUrl": "https://checkout.hubtel.com/...",
+  "checkoutDirectUrl": "https://pay.hubtel.com/..."
+}
+```
+
+**Notes on checkout URLs:**
+
+- `checkoutUrl` — full Hubtel-hosted page (open in new tab or redirect).
+- `checkoutDirectUrl` — embeddable URL for an iframe. The frontend renders this in an iframe on the checkout page.
+- If Hubtel credentials are missing or Hubtel returns an error, still return the order with no checkout URLs (order is saved, payment can be retried). Do not fail the whole request because of a Hubtel error.
+
+#### Error Responses
+
+| Status | Scenario                                                                                                                                                     |
+| ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `400`  | Missing/invalid phone, missing locationText, empty items, product not found/inactive/out of stock, variant mismatch, topping not found/inactive/out of stock |
+| `500`  | Database error                                                                                                                                               |
+
+---
+
+### 2. `POST /api/orders/callback` (Hubtel Webhook)
+
+Hubtel calls this URL automatically after payment is completed or fails. You configure this URL when initiating checkout.
+
+**This endpoint must be publicly accessible** — not behind auth.
+
+#### Expected Payload from Hubtel
+
+Hubtel sends this (exact field casing may vary — handle both cases):
+
+```json
+{
+  "ResponseCode": "0000",
+  "Data": {
+    "ClientReference": "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4",
+    "Status": "Success",
+    "Amount": 85.0,
+    "TransactionId": "HBL-XXXXX"
+  }
+}
+```
+
+`Status` values to handle: `"Success"` / `"success"` → paid. `"Failed"` / `"failed"` → failed.
+
+#### Backend Processing Steps
+
+1. Extract `ClientReference` and `Status` from payload (check both `Data.ClientReference` and top-level `clientReference` — Hubtel is inconsistent).
+2. Look up order by `client_reference`. If not found, return `200 { received: true }` (don't error — Hubtel retries on non-2xx).
+3. If `status == "success"`:
+   - Update order: `payment_status = 'paid'`, `status = 'confirmed'`, `updated_at = now()`.
+   - Send confirmation SMS to the customer's phone (see SMS section below).
+4. If `status == "failed"`:
+   - Update order: `payment_status = 'failed'`, `updated_at = now()`.
+5. Always return `200 { received: true }` — even on errors. Hubtel will retry on any non-2xx response.
+
+#### Response
+
+```json
+{ "received": true }
+```
+
+---
+
+### 3. `GET /api/orders/:clientReference/status`
+
+The frontend polls this endpoint every 3 seconds while the Hubtel payment iframe is open, to detect when payment completes.
+
+#### Response `200`
+
+```json
+{
+  "status": "confirmed",
+  "paymentStatus": "paid",
+  "totalGhs": 85.0,
+  "createdAt": "2024-01-15T10:30:00Z"
+}
+```
+
+`status` values: `pending`, `confirmed`, `preparing`, `ready`, `delivered`, `cancelled`
+`paymentStatus` values: `unpaid`, `paid`, `failed`
+
+#### Response `404`
+
+```json
+{ "message": "Order not found" }
+```
+
+---
+
+## Hubtel Payment API Integration
+
+### Initiating a Checkout
+
+**Endpoint:** `POST https://payproxyapi.hubtel.com/items/initiate`
+
+**Auth:** HTTP Basic — `Authorization: Basic base64(API_ID:API_KEY)`
+
+**Request Body:**
+
+```json
+{
+  "totalAmount": 85.0,
+  "description": "Bubble Bliss Order",
+  "callbackUrl": "https://yourbackend.com/api/orders/callback",
+  "returnUrl": "https://bubblebliss.com/order/payment/success?ref=a1b2c3d4...",
+  "cancellationUrl": "https://bubblebliss.com/order/payment/cancelled?ref=a1b2c3d4...",
+  "merchantAccountNumber": "YOUR_MERCHANT_ACCOUNT",
+  "clientReference": "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4",
+  "payeeName": "Kwame Mensah",
+  "payeeEmail": "kwame@example.com"
+}
+```
+
+**Field notes:**
+
+- `totalAmount` — in GHS (not pesewas). Divide `total_pesewas / 100`.
+- `clientReference` — the same 32-char hex you generated and stored on the order. Hubtel echoes this back in the callback — it's how you match payments to orders.
+- `callbackUrl` — your server's webhook URL. Hubtel POSTs here when payment completes.
+- `returnUrl` — where Hubtel redirects after success. The frontend's `/order/payment/success?ref=...` page.
+- `cancellationUrl` — where Hubtel redirects if the user cancels. The frontend's `/order/payment/cancelled?ref=...` page.
+- `payeeName` / `payeeEmail` — optional but improves the Hubtel checkout experience.
+
+**Success Response from Hubtel:**
+
+```json
+{
+  "responseCode": "0000",
+  "data": {
+    "checkoutId": "HBL-CHECKOUT-XXXXX",
+    "checkoutUrl": "https://checkout.hubtel.com/...",
+    "checkoutDirectUrl": "https://pay.hubtel.com/..."
+  }
+}
+```
+
+**What to do with the response:**
+
+- Save `checkoutId` on the order row (`hubtel_checkout_id` column).
+- Return `checkoutUrl` and `checkoutDirectUrl` to the frontend.
+- If `responseCode !== "0000"` or the call throws, log the error but still return the order to the frontend (non-fatal — the order is saved).
+
+---
+
+## Hubtel SMS API Integration
+
+Send a confirmation SMS when payment is confirmed (in the callback handler).
+
+**Endpoint:** `GET https://smsc.hubtel.com/v1/messages/send`
+
+**Query Parameters:**
+
+```
+clientid=YOUR_CLIENT_ID
+clientsecret=YOUR_CLIENT_SECRET
+from=YOUR_SENDER_ID
+to=233XXXXXXXXX
+content=Your+Bubble+Bliss+order+has+been+received+and+is+being+prepared!
+registeredDelivery=true
+```
+
+**Auth:** HTTP Basic — `Authorization: Basic base64(CLIENT_ID:CLIENT_SECRET)`
+
+**Phone normalisation:**
+
+- Strip all spaces.
+- If starts with `0`, replace with `233`.
+- If doesn't start with `233`, prepend `233`.
+- Result: always `233XXXXXXXXX` format.
+
+**SMS sending is non-fatal** — if it fails, log the error and continue. Do not fail the callback response.
+
+---
+
+## Pricing Rules Summary
+
+| Scenario                 | Price used                                                   |
+| ------------------------ | ------------------------------------------------------------ |
+| Product with no variants | `products.price_in_pesewas`                                  |
+| Product with variants    | `product_variants.price_in_pesewas` for the selected variant |
+| First topping            | Free (`price_applied_pesewas = 0`)                           |
+| 2nd topping onwards      | `toppings.price_in_pesewas`                                  |
+| Line total               | `(unit_pesewas + sum_topping_prices) * quantity`             |
+| Order total              | Sum of all line totals                                       |
+| Sent to Hubtel           | `total_pesewas / 100` (GHS float)                            |
+
+---
+
+## Frontend Redirect Pages
+
+The frontend has two pages that Hubtel redirects to after payment. These pages also run inside the Hubtel iframe and use `window.parent.postMessage` to signal the parent checkout page:
+
+- `GET /order/payment/success?ref=:clientReference`
+  - Posts `{ type: "HUBTEL_PAYMENT_SUCCESS", clientReference }` to parent window.
+- `GET /order/payment/cancelled?ref=:clientReference`
+  - Posts `{ type: "HUBTEL_PAYMENT_CANCELLED", clientReference }` to parent window.
+
+These are frontend-only pages — no backend action needed. The real confirmation is the callback webhook.
+
+The frontend also polls `GET /api/orders/:clientReference/status` every 3 seconds while the payment iframe is open as a fallback mechanism in case the postMessage doesn't fire.
+
+---
+
+## Security Notes
+
+1. **Never trust the total from the client.** Always calculate `total_pesewas` server-side from the database.
+2. **Validate every product, variant, and topping** is active and in stock before pricing.
+3. **`clientReference` must be unique** per order — use a cryptographically random UUID. This is the key that ties your order to Hubtel's payment record.
+4. **The callback endpoint must not require authentication** — Hubtel won't pass any auth headers. Validate authenticity by looking up the `clientReference` in your own database.
+5. **Always return 200 from the callback** — Hubtel retries on non-2xx, which can cause duplicate SMS sends or double status updates.
+6. **Idempotency on callback:** Before updating an order to `paid`, check it isn't already `paid` to handle Hubtel retries safely.
+
+---
+
+## Complete Request/Response Flow (Summary)
+
+```
+1. User fills checkout form on frontend
+2. Frontend POSTs to backend: POST /api/orders/checkout
+   Body: { phone, locationText, payeeName, payeeEmail, notes, branchSlug, orderSource, items[] }
+
+3. Backend:
+   a. Validates all inputs
+   b. Looks up each product/variant/topping in DB, checks active + in_stock
+   c. Calculates total_pesewas entirely server-side
+   d. Generates unique clientReference (32-char hex UUID)
+   e. Inserts order + order_items + order_item_toppings into DB
+   f. Calls Hubtel POST /items/initiate with totalAmount (GHS), clientReference, callback/return/cancel URLs
+   g. Saves Hubtel checkoutId on the order
+   h. Returns orderId, clientReference, totalGhs, checkoutUrl, checkoutDirectUrl to frontend
+
+4. Frontend embeds checkoutDirectUrl in an iframe
+5. User completes payment in the iframe
+
+6. Hubtel POSTs to backend: POST /api/orders/callback
+   Body: { Data: { ClientReference, Status: "Success" | "Failed" } }
+
+7. Backend:
+   a. Finds order by clientReference
+   b. If success: sets payment_status='paid', status='confirmed', sends SMS
+   c. If failed: sets payment_status='failed'
+   d. Returns { received: true }
+
+8. Meanwhile, frontend is polling: GET /api/orders/:clientReference/status every 3s
+   - When it sees paymentStatus='paid', it transitions to the success screen
+   - As a secondary signal, the success redirect page posts HUBTEL_PAYMENT_SUCCESS to parent
+```
