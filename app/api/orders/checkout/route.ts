@@ -24,14 +24,16 @@ type ItemInput = {
   toppings?: ToppingInput[];
 };
 
+type OrderSource = "online" | "instore";
+
 type CheckoutBody = {
   phone: string;
   locationText: string;
+  branchSlug: string;
   payeeName?: string;
   payeeEmail?: string;
   notes?: string;
-  branchSlug?: string;
-  orderSource?: string;
+  orderSource?: OrderSource;
   items: ItemInput[];
 };
 
@@ -93,6 +95,21 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  if (!branchSlug || typeof branchSlug !== "string") {
+    return NextResponse.json(
+      { message: "branchSlug is required" },
+      { status: 400 },
+    );
+  }
+
+  const validSources: OrderSource[] = ["online", "instore"];
+  if (orderSource !== undefined && !validSources.includes(orderSource)) {
+    return NextResponse.json(
+      { message: 'orderSource must be "online" or "instore"' },
+      { status: 400 },
+    );
+  }
+
   if (!Array.isArray(items) || items.length === 0) {
     return NextResponse.json(
       { message: "items must be a non-empty array" },
@@ -112,30 +129,27 @@ export async function POST(req: NextRequest) {
 
   // ── Resolve branch ────────────────────────────────────────────────────────
 
-  let branchId: number | null = null;
+  const { data: branchData } = await db
+    .from("branches")
+    .select("*")
+    .eq("slug", branchSlug)
+    .single();
+  const branch = branchData as Branch | null;
 
-  if (branchSlug) {
-    const { data: branchData } = await db
-      .from("branches")
-      .select("*")
-      .eq("slug", branchSlug)
-      .single();
-    const branch = branchData as Branch | null;
-
-    if (!branch) {
-      return NextResponse.json(
-        { message: `Branch "${branchSlug}" not found` },
-        { status: 400 },
-      );
-    }
-    if (!branch.is_active) {
-      return NextResponse.json(
-        { message: `Branch "${branchSlug}" is currently inactive` },
-        { status: 400 },
-      );
-    }
-    branchId = branch.id;
+  if (!branch) {
+    return NextResponse.json(
+      { message: `Branch "${branchSlug}" not found` },
+      { status: 400 },
+    );
   }
+  if (!branch.is_active) {
+    return NextResponse.json(
+      { message: `Branch "${branchSlug}" is currently inactive` },
+      { status: 400 },
+    );
+  }
+
+  const branchId = branch.id;
 
   // ── Process items ─────────────────────────────────────────────────────────
 
@@ -186,6 +200,26 @@ export async function POST(req: NextRequest) {
         { message: `Item ${i + 1}: product "${product.name}" is out of stock` },
         { status: 400 },
       );
+    }
+
+    // Check product is available at this branch
+    const { data: prodAvail } = await db
+      .from("product_branch_availability")
+      .select("branch_id")
+      .eq("product_id", productId);
+    // No rows = available at all branches; rows present = restricted
+    if (prodAvail && prodAvail.length > 0) {
+      const availableBranchIds = (prodAvail as { branch_id: number }[]).map(
+        (r) => r.branch_id,
+      );
+      if (!availableBranchIds.includes(branchId)) {
+        return NextResponse.json(
+          {
+            message: `Item ${i + 1}: product "${product.name}" is not available at this branch`,
+          },
+          { status: 400 },
+        );
+      }
     }
 
     // Resolve variant + unit price
@@ -260,6 +294,25 @@ export async function POST(req: NextRequest) {
           },
           { status: 400 },
         );
+      }
+
+      // Check topping is available at this branch
+      const { data: topAvail } = await db
+        .from("topping_branch_availability")
+        .select("branch_id")
+        .eq("topping_id", toppingId);
+      if (topAvail && topAvail.length > 0) {
+        const availableBranchIds = (topAvail as { branch_id: number }[]).map(
+          (r) => r.branch_id,
+        );
+        if (!availableBranchIds.includes(branchId)) {
+          return NextResponse.json(
+            {
+              message: `Item ${i + 1}: topping "${topping.name}" is not available at this branch`,
+            },
+            { status: 400 },
+          );
+        }
       }
 
       processedToppings.push({
