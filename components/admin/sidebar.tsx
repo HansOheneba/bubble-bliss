@@ -22,6 +22,7 @@ import {
   ClipboardList,
   Tag,
   Users,
+  BarChart3,
   LifeBuoy,
   LogOut,
 } from "lucide-react";
@@ -29,6 +30,7 @@ import {
 const nav = [
   { label: "Dashboard", href: "/admin", icon: LayoutDashboard },
   { label: "Orders", href: "/admin/orders", icon: ClipboardList },
+  { label: "Analytics", href: "/admin/analytics", icon: BarChart3 },
   { label: "Products", href: "/admin/products", icon: ShoppingBag },
   { label: "Toppings", href: "/admin/inventory", icon: Package },
   { label: "Categories", href: "/admin/categories", icon: Tag },

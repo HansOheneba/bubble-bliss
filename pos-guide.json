@@ -1,0 +1,537 @@
+{
+  "title": "Bubble Bliss POS — API Integration Guide",
+  "version": "2.0",
+  "baseUrl": "https://your-domain.com",
+  "overview": "This guide covers every step the POS device needs to perform: fetching the menu, placing an order, handling payment (cash or MoMo), updating order status, and viewing order history. The POS never needs to manage branch IDs or order sources — all of that is derived automatically from the pos_user_email.",
+
+  "authentication": {
+    "type": "none",
+    "note": "All /api/* routes are public. No headers or tokens required. The POS device identifies itself and its branch using pos_user_email."
+  },
+
+  "pos_credentials": {
+    "description": "Each POS device is issued a pos_user_email. When this email is sent with a checkout request, the server automatically: (1) looks up the branch linked to that email, (2) sets order_source to instore, (3) validates that the POS account and its branch are both active.",
+    "examples": {
+      "accra": "accra-pos@bubbleblisscafe.com",
+      "cape_coast": "capecoast-pos@bubbleblisscafe.com"
+    }
+  },
+
+  "flows": {
+    "1_app_startup": {
+      "description": "When the POS app launches, load the menu and available tellers for the current branch.",
+      "steps": [
+        {
+          "step": 1,
+          "label": "Load products",
+          "method": "GET",
+          "url": "/api/menu/products?branchSlug=cape-coast",
+          "note": "Replace cape-coast with your branch slug. Returns only products available at this branch.",
+          "response_shape": {
+            "products": [
+              {
+                "id": 12,
+                "slug": "chocolate-pearl",
+                "name": "Chocolate Pearl",
+                "description": "Rich cocoa bubble tea",
+                "categoryId": 3,
+                "categoryName": "Signature",
+                "priceInPesewas": 3500,
+                "priceGhs": 35.0,
+                "isActive": true,
+                "inStock": true,
+                "image": "https://i.ibb.co/...",
+                "variants": [
+                  {
+                    "id": 5,
+                    "key": "small",
+                    "label": "Small",
+                    "priceInPesewas": 3500
+                  },
+                  {
+                    "id": 6,
+                    "key": "large",
+                    "label": "Large",
+                    "priceInPesewas": 4500
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "step": 2,
+          "label": "Load toppings",
+          "method": "GET",
+          "url": "/api/menu/toppings?branchSlug=cape-coast",
+          "note": "Returns only toppings available at this branch. The first topping on each item is free.",
+          "response_shape": {
+            "toppings": [
+              {
+                "id": 1,
+                "name": "Tapioca Pearls",
+                "priceInPesewas": 200,
+                "priceGhs": 2.0,
+                "isActive": true,
+                "inStock": true
+              }
+            ]
+          }
+        },
+        {
+          "step": 3,
+          "label": "Load tellers for the branch",
+          "method": "GET",
+          "url": "/api/admin/tellers?pos_user_email=capecoast-pos@bubbleblisscafe.com",
+          "note": "Returns all active tellers assigned to the branch linked to that POS email. Use this to populate a teller selector at the start of each shift.",
+          "response_shape": {
+            "tellers": [
+              {
+                "id": 3,
+                "name": "Jane Asante",
+                "email": "jane@bubbleblisscafe.com",
+                "isActive": true,
+                "branch": {
+                  "id": 2,
+                  "slug": "cape-coast",
+                  "name": "Cape Coast"
+                }
+              }
+            ]
+          }
+        }
+      ]
+    },
+
+    "2_place_order": {
+      "description": "Customer selects items. Teller inputs the order and phone number, then submits. The server validates everything, creates the order record, and (for MoMo/Hubtel) initiates the payment prompt on the customer's phone.",
+      "steps": [
+        {
+          "step": 1,
+          "label": "Submit checkout",
+          "method": "POST",
+          "url": "/api/orders/checkout",
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "request_body": {
+            "pos_user_email": "capecoast-pos@bubbleblisscafe.com",
+            "phone": "0241234567",
+            "locationText": "In-store",
+            "payeeName": "Kofi Mensah",
+            "payeeEmail": null,
+            "notes": "Extra cold please",
+            "items": [
+              {
+                "productId": 12,
+                "variantId": 6,
+                "quantity": 2,
+                "sugarLevel": "50%",
+                "spiceLevel": null,
+                "note": null,
+                "toppings": [{ "toppingId": 1 }, { "toppingId": 3 }]
+              },
+              {
+                "productId": 7,
+                "variantId": null,
+                "quantity": 1,
+                "sugarLevel": "100%",
+                "spiceLevel": null,
+                "note": "No ice",
+                "toppings": []
+              }
+            ]
+          },
+          "notes": [
+            "pos_user_email is required. Do NOT send branchSlug when using POS mode.",
+            "phone must be a valid 10-digit Ghanaian number (0XXXXXXXXX). The server normalises it to 233XXXXXXXXX.",
+            "locationText for in-store orders should be 'In-store' or the counter number.",
+            "variantId is required if the product has variants, otherwise send null.",
+            "toppings array can be empty. The first topping per item is free automatically.",
+            "sugarLevel and spiceLevel are optional free-text strings (e.g. '50%', 'mild')."
+          ],
+          "success_response_hubtel": {
+            "orderId": 88,
+            "orderNumber": "BB-00088",
+            "clientReference": "bb-1713500000000-a3f2",
+            "totalGhs": 93.0,
+            "paymentMode": "hubtel",
+            "checkoutUrl": "https://checkout.hubtel.com/...",
+            "message": "Order created. Redirect customer to checkout URL or show QR code."
+          },
+          "success_response_cash_note": "For cash payments, place the order normally using this endpoint (payment will default to hubtel), then immediately PATCH the order to set paymentMethod=cash and paymentStatus=paid (see Flow 3).",
+          "error_responses": {
+            "400_no_email": {
+              "message": "Either pos_user_email or branchSlug is required"
+            },
+            "400_pos_not_found": { "message": "POS user 'x@x.com' not found" },
+            "400_branch_inactive": {
+              "message": "Branch linked to 'x@x.com' is currently inactive"
+            },
+            "400_product_not_available": {
+              "message": "Item 1: product 'X' is not available at this branch"
+            },
+            "400_out_of_stock": {
+              "message": "Item 1: product 'X' is out of stock"
+            },
+            "400_topping_unavailable": {
+              "message": "Item 1: topping 'X' is not available at this branch"
+            },
+            "400_invalid_phone": {
+              "message": "Invalid phone number — expected 10-digit Ghanaian number"
+            }
+          }
+        }
+      ]
+    },
+
+    "3_cash_payment": {
+      "description": "Customer pays with cash. After collecting the money, immediately mark the order as paid via PATCH.",
+      "steps": [
+        {
+          "step": 1,
+          "label": "Place order (same as Flow 2, Step 1)",
+          "note": "Submit the checkout request. Save the orderId from the response."
+        },
+        {
+          "step": 2,
+          "label": "Mark order paid by cash",
+          "method": "PATCH",
+          "url": "/api/admin/orders/:orderId",
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "request_body": {
+            "paymentMethod": "cash",
+            "paymentStatus": "paid",
+            "status": "confirmed",
+            "tellerId": 3
+          },
+          "notes": [
+            "tellerId is the ID of the teller who processed the order (from the tellers list loaded at startup).",
+            "Set status to confirmed to move it into the kitchen queue.",
+            "paymentMethod must be one of: hubtel, cash, momo."
+          ],
+          "success_response": {
+            "order": {
+              "id": 88,
+              "status": "confirmed",
+              "paymentStatus": "paid",
+              "paymentMethod": "cash",
+              "tellerId": 3
+            }
+          }
+        }
+      ]
+    },
+
+    "4_momo_payment": {
+      "description": "Customer pays via MoMo. The server sends a payment prompt to the customer's phone via Hubtel. The POS polls for the result.",
+      "steps": [
+        {
+          "step": 1,
+          "label": "Place order (same as Flow 2, Step 1)",
+          "note": "The server automatically initiates a Hubtel MoMo prompt on the customer's phone. Save clientReference from the response."
+        },
+        {
+          "step": 2,
+          "label": "Poll payment status",
+          "method": "GET",
+          "url": "/api/orders/:clientReference/status",
+          "note": "Poll every 5 seconds until paymentStatus is 'paid' or 'failed'. Timeout after 3 minutes.",
+          "response_shape": {
+            "status": "pending",
+            "paymentStatus": "unpaid",
+            "totalGhs": 93.0,
+            "createdAt": "2026-04-19T10:30:00.000Z"
+          },
+          "payment_confirmed_response": {
+            "status": "confirmed",
+            "paymentStatus": "paid",
+            "totalGhs": 93.0,
+            "createdAt": "2026-04-19T10:30:00.000Z"
+          },
+          "notes": [
+            "The Hubtel callback automatically sets paymentStatus=paid and status=confirmed when the customer approves the prompt.",
+            "Once status is confirmed, stop polling and show the confirmation screen.",
+            "If paymentStatus becomes 'failed', prompt the teller to retry or switch to cash."
+          ]
+        },
+        {
+          "step": 3,
+          "label": "Attach teller to order after payment",
+          "method": "PATCH",
+          "url": "/api/admin/orders/:orderId",
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "request_body": {
+            "tellerId": 3
+          },
+          "note": "Optional but recommended: link the teller who handled this transaction for analytics."
+        }
+      ]
+    },
+
+    "5_update_order_status": {
+      "description": "Move the order through the kitchen workflow. Each status change is a PATCH to the same endpoint.",
+      "status_flow": "pending -> confirmed -> preparing -> ready -> completed",
+      "steps": [
+        {
+          "label": "Mark as preparing (kitchen starts)",
+          "method": "PATCH",
+          "url": "/api/admin/orders/:orderId",
+          "request_body": { "status": "preparing" }
+        },
+        {
+          "label": "Mark as ready (ready for pickup / handover)",
+          "method": "PATCH",
+          "url": "/api/admin/orders/:orderId",
+          "request_body": { "status": "ready" }
+        },
+        {
+          "label": "Mark as completed (handed to customer)",
+          "method": "PATCH",
+          "url": "/api/admin/orders/:orderId",
+          "request_body": { "status": "completed" }
+        },
+        {
+          "label": "Cancel an order",
+          "method": "PATCH",
+          "url": "/api/admin/orders/:orderId",
+          "request_body": { "status": "cancelled" }
+        }
+      ],
+      "valid_statuses": [
+        "pending",
+        "confirmed",
+        "preparing",
+        "ready",
+        "completed",
+        "cancelled"
+      ]
+    },
+
+    "6_view_orders": {
+      "description": "Fetch the order queue for the current branch. Use this to display active orders on the POS screen.",
+      "steps": [
+        {
+          "label": "Fetch all orders for this branch",
+          "method": "GET",
+          "url": "/api/admin/orders?pos_user_email=capecoast-pos@bubbleblisscafe.com&limit=50",
+          "note": "Returns the 50 most recent orders for the branch, newest first."
+        },
+        {
+          "label": "Fetch only active orders (not completed or cancelled)",
+          "method": "GET",
+          "url": "/api/admin/orders?pos_user_email=capecoast-pos@bubbleblisscafe.com&status=preparing"
+        },
+        {
+          "label": "Fetch only unpaid orders (for cash recovery)",
+          "method": "GET",
+          "url": "/api/admin/orders?pos_user_email=capecoast-pos@bubbleblisscafe.com&paymentStatus=unpaid"
+        },
+        {
+          "label": "Fetch a single order status by clientReference",
+          "method": "GET",
+          "url": "/api/orders/:clientReference/status"
+        }
+      ],
+      "order_response_shape": {
+        "orders": [
+          {
+            "id": 88,
+            "orderNumber": "BB-00088",
+            "clientReference": "bb-1713500000000-a3f2",
+            "phone": "233241234567",
+            "customerName": "Kofi Mensah",
+            "locationText": "In-store",
+            "notes": "Extra cold please",
+            "status": "preparing",
+            "paymentStatus": "paid",
+            "paymentMethod": "cash",
+            "orderSource": "instore",
+            "totalGhs": 93.0,
+            "totalPesewas": 9300,
+            "createdAt": "2026-04-19T10:30:00.000Z",
+            "updatedAt": "2026-04-19T10:31:00.000Z",
+            "branch": {
+              "id": 2,
+              "slug": "cape-coast",
+              "name": "Cape Coast",
+              "email": "capecoast@bubbleblisscafe.com"
+            },
+            "items": [
+              {
+                "id": "uuid-here",
+                "productId": 12,
+                "variantId": 6,
+                "productName": "Chocolate Pearl",
+                "variantLabel": "Large",
+                "unitPesewas": 4500,
+                "quantity": 2,
+                "sugarLevel": "50%",
+                "spiceLevel": null,
+                "note": null,
+                "toppings": [
+                  {
+                    "id": "uuid-here",
+                    "toppingId": 1,
+                    "toppingName": "Tapioca Pearls",
+                    "basePesewas": 200,
+                    "priceAppliedPesewas": 0
+                  },
+                  {
+                    "id": "uuid-here",
+                    "toppingId": 3,
+                    "toppingName": "Coconut Jelly",
+                    "basePesewas": 200,
+                    "priceAppliedPesewas": 200
+                  }
+                ]
+              }
+            ]
+          }
+        ],
+        "pagination": {
+          "limit": 50,
+          "offset": 0,
+          "count": 1
+        }
+      }
+    },
+
+    "7_edit_order": {
+      "description": "All order edits go to the same PATCH endpoint. You can update any combination of fields in a single request.",
+      "method": "PATCH",
+      "url": "/api/admin/orders/:orderId",
+      "patchable_fields": {
+        "status": "pending | confirmed | preparing | ready | completed | cancelled",
+        "paymentStatus": "unpaid | paid | failed",
+        "paymentMethod": "hubtel | cash | momo",
+        "tellerId": "number (teller ID) or null",
+        "notes": "string or null"
+      },
+      "examples": [
+        {
+          "scenario": "Teller processes cash payment",
+          "body": {
+            "paymentMethod": "cash",
+            "paymentStatus": "paid",
+            "status": "confirmed",
+            "tellerId": 3
+          }
+        },
+        {
+          "scenario": "Kitchen marks order as ready",
+          "body": { "status": "ready" }
+        },
+        {
+          "scenario": "Add a note to an order",
+          "body": { "notes": "Customer requested extra ice" }
+        },
+        {
+          "scenario": "Reassign teller",
+          "body": { "tellerId": 5 }
+        },
+        {
+          "scenario": "Cancel an order",
+          "body": { "status": "cancelled" }
+        }
+      ]
+    }
+  },
+
+  "endpoint_summary": [
+    {
+      "method": "GET",
+      "url": "/api/menu/products?branchSlug=<slug>",
+      "description": "Fetch all active, in-stock products for a branch (with variants)"
+    },
+    {
+      "method": "GET",
+      "url": "/api/menu/toppings?branchSlug=<slug>",
+      "description": "Fetch all active, in-stock toppings for a branch"
+    },
+    {
+      "method": "GET",
+      "url": "/api/menu/categories",
+      "description": "Fetch all product categories"
+    },
+    {
+      "method": "GET",
+      "url": "/api/admin/tellers?pos_user_email=<email>",
+      "description": "Fetch tellers assigned to the POS device's branch"
+    },
+    {
+      "method": "POST",
+      "url": "/api/orders/checkout",
+      "description": "Place a new order. Returns orderId, orderNumber, clientReference, and totalGhs."
+    },
+    {
+      "method": "GET",
+      "url": "/api/orders/:clientReference/status",
+      "description": "Poll payment and order status by clientReference"
+    },
+    {
+      "method": "GET",
+      "url": "/api/admin/orders?pos_user_email=<email>&status=<status>&paymentStatus=<status>&limit=<n>&offset=<n>",
+      "description": "Fetch order queue for the branch with optional filters"
+    },
+    {
+      "method": "PATCH",
+      "url": "/api/admin/orders/:id",
+      "description": "Update order: status, paymentStatus, paymentMethod, tellerId, notes"
+    }
+  ],
+
+  "pricing_rules": {
+    "first_topping_free": "The first topping on each order item is always free. priceAppliedPesewas will be 0 for the first topping and the full price for subsequent ones.",
+    "variants": "If a product has variants, the variant price overrides the product base price. Always send variantId when variants exist.",
+    "total_calculation": "Total = sum of (unitPesewas * quantity) + all topping priceAppliedPesewas across all items"
+  },
+
+  "phone_number_format": {
+    "accepted_formats": ["0241234567", "233241234567", "+233241234567"],
+    "normalised_to": "233241234567",
+    "rule": "Always send a valid 10-digit Ghanaian number starting with 0. The server normalises it."
+  },
+
+  "common_errors": [
+    {
+      "code": 400,
+      "message": "Either pos_user_email or branchSlug is required",
+      "fix": "Always include pos_user_email in every checkout request"
+    },
+    {
+      "code": 400,
+      "message": "Provide either pos_user_email or branchSlug, not both",
+      "fix": "Remove branchSlug when using POS mode"
+    },
+    {
+      "code": 400,
+      "message": "Invalid phone number",
+      "fix": "Use a 10-digit Ghanaian number (0XXXXXXXXX)"
+    },
+    {
+      "code": 400,
+      "message": "Item N: product 'X' is not available at this branch",
+      "fix": "Refresh your local menu cache — the product was removed from this branch"
+    },
+    {
+      "code": 400,
+      "message": "Item N: product 'X' is out of stock",
+      "fix": "Remove the item and inform the customer. Refresh the menu."
+    },
+    {
+      "code": 404,
+      "message": "POS user 'x@x.com' not found",
+      "fix": "Check that the pos_user_email is correct and exists in the system"
+    },
+    {
+      "code": 403,
+      "message": "POS user 'x@x.com' is inactive",
+      "fix": "Contact the admin to reactivate the POS account"
+    }
+  ]
+}
