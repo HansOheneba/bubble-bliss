@@ -1,0 +1,400 @@
+{
+  "_info": {
+    "title": "Bubble Bliss POS API Reference",
+    "description": "All endpoints for the Cape Coast branch POS system. Base URL: https://admin.bubbleblisscafe.com/api",
+    "base_url": "https://admin.bubbleblisscafe.com/api",
+    "branch": "cape-coast",
+    "default_order_source": "instore",
+    "notes": [
+      "All prices are in pesewas (GHS x 100). Divide by 100 to display in GHS.",
+      "For POS orders use pos_user_email instead of branchSlug + orderSource. The server derives both from the user account.",
+      "Cape Coast POS email: pos.capecoast@bubbleblisscafe.com",
+      "The first topping on any item is always free — server enforces this.",
+      "Products with no branch_availability entries are available at all branches.",
+      "After checkout, poll the status endpoint until paymentStatus is 'paid' or 'failed'."
+    ]
+  },
+
+  "endpoints": {
+    "1_get_categories": {
+      "summary": "Fetch all menu categories",
+      "method": "GET",
+      "url": "https://admin.bubbleblisscafe.com/api/menu/categories",
+      "query_params": "none",
+      "request_body": "none",
+      "example_response": {
+        "categories": [
+          {
+            "id": 1,
+            "slug": "bubble-tea",
+            "name": "Bubble Tea",
+            "sort_order": 1
+          },
+          {
+            "id": 2,
+            "slug": "smoothies",
+            "name": "Smoothies",
+            "sort_order": 2
+          }
+        ]
+      }
+    },
+
+    "2_get_products": {
+      "summary": "Fetch all active products for a branch",
+      "method": "GET",
+      "url": "https://admin.bubbleblisscafe.com/api/menu/products?branchSlug=cape-coast",
+      "query_params": {
+        "branchSlug": {
+          "type": "string",
+          "required": true,
+          "description": "Always pass 'cape-coast' for this POS. Filters products available at this branch.",
+          "example": "cape-coast"
+        },
+        "categorySlug": {
+          "type": "string",
+          "required": false,
+          "description": "Optional. Filter by category slug (from the categories endpoint).",
+          "example": "bubble-tea"
+        }
+      },
+      "request_body": "none",
+      "example_urls": [
+        "https://admin.bubbleblisscafe.com/api/menu/products?branchSlug=cape-coast",
+        "https://admin.bubbleblisscafe.com/api/menu/products?branchSlug=cape-coast&categorySlug=bubble-tea"
+      ],
+      "example_response": {
+        "products": [
+          {
+            "id": 1,
+            "name": "Classic Milk Tea",
+            "slug": "classic-milk-tea",
+            "description": "Creamy milk tea with your choice of toppings",
+            "image": "https://i.ibb.co/example/classic-milk-tea.jpg",
+            "price_in_pesewas": 2500,
+            "in_stock": true,
+            "sort_order": 1,
+            "category": {
+              "id": 1,
+              "slug": "bubble-tea",
+              "name": "Bubble Tea",
+              "sort_order": 1
+            },
+            "variants": [],
+            "available_branch_ids": []
+          },
+          {
+            "id": 2,
+            "name": "Taro Milk Tea",
+            "slug": "taro-milk-tea",
+            "description": "Rich taro flavoured milk tea",
+            "image": "https://i.ibb.co/example/taro.jpg",
+            "price_in_pesewas": null,
+            "in_stock": true,
+            "sort_order": 2,
+            "category": {
+              "id": 1,
+              "slug": "bubble-tea",
+              "name": "Bubble Tea",
+              "sort_order": 1
+            },
+            "variants": [
+              {
+                "id": 10,
+                "product_id": 2,
+                "key": "small",
+                "label": "Small",
+                "price_in_pesewas": 2000,
+                "sort_order": 1
+              },
+              {
+                "id": 11,
+                "product_id": 2,
+                "key": "large",
+                "label": "Large",
+                "price_in_pesewas": 2800,
+                "sort_order": 2
+              }
+            ],
+            "available_branch_ids": [3, 5]
+          }
+        ]
+      },
+      "notes": [
+        "If variants array is non-empty, the customer must pick one — pass variantId in the order item.",
+        "If variants is empty, price_in_pesewas is the flat price — do not pass variantId.",
+        "available_branch_ids being empty means available everywhere.",
+        "in_stock=false means the product should be shown as unavailable in the UI."
+      ]
+    },
+
+    "3_get_toppings": {
+      "summary": "Fetch all available toppings for a branch",
+      "method": "GET",
+      "url": "https://admin.bubbleblisscafe.com/api/menu/toppings?branchSlug=cape-coast",
+      "query_params": {
+        "branchSlug": {
+          "type": "string",
+          "required": true,
+          "description": "Always pass 'cape-coast' for this POS.",
+          "example": "cape-coast"
+        }
+      },
+      "request_body": "none",
+      "example_response": {
+        "toppings": [
+          {
+            "id": 1,
+            "name": "Tapioca Pearls",
+            "price_in_pesewas": 200,
+            "sort_order": 1,
+            "available_branch_ids": []
+          },
+          {
+            "id": 2,
+            "name": "Grass Jelly",
+            "price_in_pesewas": 300,
+            "sort_order": 2,
+            "available_branch_ids": [3, 5]
+          }
+        ]
+      },
+      "notes": [
+        "Only active + in-stock toppings are returned.",
+        "The first topping added to any order item is always free — server calculates this automatically.",
+        "available_branch_ids being empty means available everywhere."
+      ]
+    },
+
+    "4_place_order": {
+      "summary": "Place a new order",
+      "method": "POST",
+      "url": "https://admin.bubbleblisscafe.com/api/orders/checkout",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "request_body": {
+        "phone": {
+          "type": "string",
+          "required": true,
+          "description": "Customer phone number. 10-digit Ghanaian format (0XXXXXXXXX). Server converts to 233XXXXXXXXX.",
+          "example": "0244123456"
+        },
+        "locationText": {
+          "type": "string",
+          "required": true,
+          "description": "Customer delivery address or 'In-store' for walk-in orders.",
+          "example": "Cape Coast Central Branch"
+        },
+        "pos_user_email": {
+          "type": "string",
+          "required": "required for POS mode (use this instead of branchSlug+orderSource)",
+          "description": "The POS account email. Server looks up which branch this account belongs to and sets orderSource=instore automatically.",
+          "example": "pos.capecoast@bubbleblisscafe.com"
+        },
+        "branchSlug": {
+          "type": "string",
+          "required": "required for online mode only (mutually exclusive with pos_user_email)",
+          "description": "Branch slug. Only used by the online ordering frontend, not the POS.",
+          "example": "cape-coast"
+        },
+        "orderSource": {
+          "type": "string",
+          "required": false,
+          "allowed_values": ["online", "instore"],
+          "default": "online",
+          "description": "Only relevant in online mode. In POS mode this is always forced to 'instore' by the server.",
+          "example": "online"
+        },
+        "payeeName": {
+          "type": "string",
+          "required": false,
+          "description": "Customer name for the receipt.",
+          "example": "Kwame Mensah"
+        },
+        "payeeEmail": {
+          "type": "string",
+          "required": false,
+          "description": "Customer email. Optional.",
+          "example": "kwame@example.com"
+        },
+        "notes": {
+          "type": "string",
+          "required": false,
+          "description": "Order-level notes visible to staff.",
+          "example": "Extra napkins please"
+        },
+        "items": {
+          "type": "array",
+          "required": true,
+          "description": "Non-empty array of order items.",
+          "item_fields": {
+            "productId": {
+              "type": "number",
+              "required": true,
+              "description": "id from the products endpoint."
+            },
+            "variantId": {
+              "type": "number | null",
+              "required": false,
+              "description": "Required if the product has variants. Pass null or omit if no variants."
+            },
+            "quantity": {
+              "type": "number",
+              "required": true,
+              "description": "Must be at least 1."
+            },
+            "sugarLevel": {
+              "type": "string | null",
+              "required": false,
+              "description": "E.g. '0%', '25%', '50%', '75%', '100%'. Pass null to omit.",
+              "example": "50%"
+            },
+            "spiceLevel": {
+              "type": "string | null",
+              "required": false,
+              "description": "E.g. 'mild', 'medium', 'hot'. Pass null to omit.",
+              "example": "mild"
+            },
+            "note": {
+              "type": "string | null",
+              "required": false,
+              "description": "Item-level note. Pass null to omit.",
+              "example": "No ice"
+            },
+            "toppings": {
+              "type": "array",
+              "required": false,
+              "description": "List of topping ids. First topping is always free. Pass [] for no toppings.",
+              "item_fields": {
+                "toppingId": {
+                  "type": "number",
+                  "required": true,
+                  "description": "id from the toppings endpoint."
+                }
+              }
+            }
+          }
+        }
+      },
+      "example_request_body": {
+        "_comment": "POS mode — use pos_user_email, no branchSlug or orderSource needed",
+        "phone": "0244123456",
+        "locationText": "Cape Coast Central Branch",
+        "pos_user_email": "pos.capecoast@bubbleblisscafe.com",
+        "payeeName": "Kwame Mensah",
+        "notes": "Extra napkins",
+        "items": [
+          {
+            "productId": 1,
+            "variantId": null,
+            "quantity": 2,
+            "sugarLevel": "50%",
+            "spiceLevel": null,
+            "note": "No ice",
+            "toppings": [{ "toppingId": 1 }, { "toppingId": 2 }]
+          },
+          {
+            "productId": 2,
+            "variantId": 11,
+            "quantity": 1,
+            "sugarLevel": "100%",
+            "spiceLevel": null,
+            "note": null,
+            "toppings": []
+          }
+        ]
+      },
+      "example_success_response": {
+        "orderId": 11,
+        "orderNumber": "BB-11",
+        "clientReference": "0fdc3f7677204a1895629e5077e77279",
+        "status": "pending",
+        "totalGhs": 52.0,
+        "totalPesewas": 5200,
+        "message": "Order placed successfully",
+        "checkoutUrl": "https://pay.hubtel.com/3cf81864ca4442cf974597129e91ae1d",
+        "checkoutDirectUrl": "https://pay.hubtel.com/3cf81864ca4442cf974597129e91ae1d/direct"
+      },
+      "error_responses": {
+        "400_no_auth": {
+          "message": "Either pos_user_email or branchSlug is required"
+        },
+        "400_both_provided": {
+          "message": "Provide either pos_user_email or branchSlug, not both"
+        },
+        "400_pos_user_not_found": {
+          "message": "POS user \"hans@gmail.com\" not found"
+        },
+        "400_pos_user_inactive": {
+          "message": "POS user \"hans@gmail.com\" is inactive"
+        },
+        "400_branch_not_found": { "message": "Branch \"xyz\" not found" },
+        "400_branch_inactive": {
+          "message": "Branch \"xyz\" is currently inactive"
+        },
+        "400_invalid_phone": {
+          "message": "Invalid phone number — expected 10-digit Ghanaian number"
+        },
+        "400_product_not_found": { "message": "Item 1: product 99 not found" },
+        "400_product_unavailable": {
+          "message": "Item 1: product \"Classic Milk Tea\" is not available at this branch"
+        },
+        "400_product_out_of_stock": {
+          "message": "Item 1: product \"Classic Milk Tea\" is out of stock"
+        },
+        "400_variant_required": {
+          "message": "Item 1: product \"Taro Milk Tea\" requires a size variant to be selected"
+        },
+        "400_topping_unavailable": {
+          "message": "Item 1: topping \"Grass Jelly\" is not available at this branch"
+        }
+      },
+      "notes": [
+        "Save clientReference from the response — it is used to poll order status.",
+        "checkoutUrl and checkoutDirectUrl are Hubtel payment links. For instore cash payments you can ignore these.",
+        "Total is calculated server-side — never trust a client-supplied total.",
+        "First topping per item is free; server applies this automatically."
+      ]
+    },
+
+    "5_order_status": {
+      "summary": "Poll order payment and fulfilment status",
+      "method": "GET",
+      "url": "https://admin.bubbleblisscafe.com/api/orders/{clientReference}/status",
+      "url_params": {
+        "clientReference": {
+          "type": "string",
+          "description": "The clientReference returned from the checkout endpoint.",
+          "example": "0fdc3f7677204a1895629e5077e77279"
+        }
+      },
+      "example_url": "https://admin.bubbleblisscafe.com/api/orders/0fdc3f7677204a1895629e5077e77279/status",
+      "request_body": "none",
+      "example_response": {
+        "status": "confirmed",
+        "paymentStatus": "paid",
+        "totalGhs": 52.0,
+        "createdAt": "2026-04-19T10:32:00.000Z"
+      },
+      "status_values": {
+        "status": [
+          "pending",
+          "confirmed",
+          "preparing",
+          "ready",
+          "completed",
+          "cancelled"
+        ],
+        "paymentStatus": ["unpaid", "paid", "failed"]
+      },
+      "error_responses": {
+        "404": { "message": "Order not found" }
+      },
+      "notes": [
+        "Poll this endpoint after placing an order to confirm payment.",
+        "For instore cash orders you can mark as paid immediately on your end without polling."
+      ]
+    }
+  }
+}

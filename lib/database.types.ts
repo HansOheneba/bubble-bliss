@@ -272,6 +272,29 @@ export type Database = {
           branch_id?: number;
         };
       };
+      pos_users: {
+        Row: {
+          id: number;
+          email: string;
+          name: string | null;
+          branch_id: number;
+          is_active: boolean;
+          created_at: string | null;
+        };
+        Insert: {
+          email: string;
+          name?: string | null;
+          branch_id: number;
+          is_active?: boolean;
+          created_at?: string | null;
+        };
+        Update: {
+          email?: string;
+          name?: string | null;
+          branch_id?: number;
+          is_active?: boolean;
+        };
+      };
     };
     Views: Record<string, never>;
     Functions: Record<string, never>;
@@ -290,6 +313,7 @@ export type Order = Database["public"]["Tables"]["orders"]["Row"];
 export type OrderItem = Database["public"]["Tables"]["order_items"]["Row"];
 export type OrderItemTopping =
   Database["public"]["Tables"]["order_item_toppings"]["Row"];
+export type PosUser = Database["public"]["Tables"]["pos_users"]["Row"];
 
 export type OrderWithItems = Order & {
   items: (OrderItem & { toppings: OrderItemTopping[] })[];
