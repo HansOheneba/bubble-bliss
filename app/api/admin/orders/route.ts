@@ -43,7 +43,10 @@ export async function GET(req: NextRequest) {
       .select("branch_id, is_active")
       .eq("email", posUserEmail)
       .single();
-    const posUser = posUserData as Pick<PosUser, "branch_id" | "is_active"> | null;
+    const posUser = posUserData as Pick<
+      PosUser,
+      "branch_id" | "is_active"
+    > | null;
 
     if (!posUser) {
       return NextResponse.json(
