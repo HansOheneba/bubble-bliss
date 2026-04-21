@@ -22,7 +22,7 @@ export async function GET(req: NextRequest) {
     const { data: posUserData } = await db
       .from("pos_users")
       .select("branch_id, is_active")
-      .eq("email", posUserEmail)
+      .ilike("email", posUserEmail)
       .single();
     const posUser = posUserData as Pick<
       PosUser,
