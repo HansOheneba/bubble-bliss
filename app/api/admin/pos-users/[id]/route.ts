@@ -103,10 +103,7 @@ export async function DELETE(
 
   const db = createAdminClient();
 
-  const { error } = await db
-    .from("pos_users")
-    .delete()
-    .eq("id", posUserId);
+  const { error } = await db.from("pos_users").delete().eq("id", posUserId);
 
   if (error) {
     console.error("POS user delete error:", error);
