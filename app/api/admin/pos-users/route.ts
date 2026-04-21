@@ -70,7 +70,11 @@ export async function POST(req: NextRequest) {
 
   const { data, error } = await db
     .from("pos_users")
-    .insert({ email: email.trim(), name: name.trim(), branch_id: branchId })
+    .insert({
+      email: email.trim(),
+      name: name.trim(),
+      branch_id: branchId,
+    } as never)
     .select("*")
     .single();
 
