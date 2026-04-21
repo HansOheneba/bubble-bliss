@@ -25,6 +25,7 @@ import {
   BarChart3,
   LifeBuoy,
   LogOut,
+  Monitor,
 } from "lucide-react";
 
 const nav = [
@@ -35,6 +36,7 @@ const nav = [
   { label: "Toppings", href: "/admin/inventory", icon: Package },
   { label: "Categories", href: "/admin/categories", icon: Tag },
   { label: "Tellers", href: "/admin/tellers", icon: Users },
+  { label: "POS Users", href: "/admin/pos-users", icon: Monitor },
 ];
 
 export default function AdminSidebar() {
