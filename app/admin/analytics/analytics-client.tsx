@@ -553,8 +553,8 @@ export default function AnalyticsClient({
           </p>
           <p className="text-sm text-muted-foreground mb-4">
             {selectedBranch === "all"
-            ? "By units sold across all branches"
-            : `By units sold at ${selectedBranch}`}
+              ? "By units sold across all branches"
+              : `By units sold at ${selectedBranch}`}
           </p>
           {activeTopProducts.length === 0 ? (
             <p className="text-sm text-muted-foreground py-8 text-center">
