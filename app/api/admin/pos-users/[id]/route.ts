@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase";
+import { requireAdmin } from "@/lib/admin-auth";
 import type { PosUser } from "@/lib/database.types";
 
 // PATCH /api/admin/pos-users/[id] — update name, email, branchId, isActive
@@ -7,6 +8,11 @@ export async function PATCH(
   req: NextRequest,
   context: { params: Promise<{ id: string }> },
 ) {
+  const isAdmin = await requireAdmin();
+  if (!isAdmin) {
+    return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
+  }
+
   const { id } = await context.params;
   const posUserId = Number(id);
 
@@ -91,6 +97,11 @@ export async function DELETE(
   _req: NextRequest,
   context: { params: Promise<{ id: string }> },
 ) {
+  const isAdmin = await requireAdmin();
+  if (!isAdmin) {
+    return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
+  }
+
   const { id } = await context.params;
   const posUserId = Number(id);
 

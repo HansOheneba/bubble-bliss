@@ -1,11 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase";
+import { requireAdmin } from "@/lib/admin-auth";
 import type { PosUser, Branch } from "@/lib/database.types";
 
 type PosUserRow = PosUser & { branch: Branch | null };
 
 // GET /api/admin/pos-users
 export async function GET() {
+  const isAdmin = await requireAdmin();
+  if (!isAdmin) {
+    return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
+  }
+
   const db = createAdminClient();
 
   const { data, error } = await db
@@ -40,6 +46,11 @@ export async function GET() {
 
 // POST /api/admin/pos-users — create a new POS user
 export async function POST(req: NextRequest) {
+  const isAdmin = await requireAdmin();
+  if (!isAdmin) {
+    return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
+  }
+
   let body: { email: string; name: string; branchId: number };
   try {
     body = (await req.json()) as {

@@ -1,28 +1,30 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase";
-import type { PosUser } from "@/lib/database.types";
+import { requireAdmin } from "@/lib/admin-auth";
+import { authenticatePosRequest } from "@/lib/pos-auth";
 
 // ── Query params ──────────────────────────────────────────────────────────────
-// ?pos_user_email=hans@gmail.com  — scope to the teller's branch (preferred)
-// ?branchSlug=cape-coast          — scope to a branch by slug (alternative)
-// Omit both to get a cross-branch summary for today.
+// Auth: POS Bearer key (auto-scopes to their branch) OR admin Clerk session
+// ?branchSlug=cape-coast — admin only: scope to a branch by slug
+// Omit branchSlug (admin) to get a cross-branch summary for today.
 //
 // Response:
 // {
 //   date: "YYYY-MM-DD",
-//   ordersCompleted: number,    — completed orders today
-//   cupsUsed: number,           — total drink cups consumed today (non-shawarma items)
-//   revenueGhs: number          — total revenue from completed orders today (GHS)
-//   paymentBreakdown: Array<{
-//     method: "cash" | "momo" | "hubtel",
-//     orders: number,
-//     revenueGhs: number
-//   }>
+//   ordersCompleted: number,
+//   cupsUsed: number,
+//   revenueGhs: number,
+//   paymentBreakdown: Array<{ method, orders, revenueGhs }>
 // }
 
 export async function GET(req: NextRequest) {
+  const posUser = await authenticatePosRequest(req);
+  const isAdmin = posUser ? false : await requireAdmin();
+  if (!posUser && !isAdmin) {
+    return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
+  }
+
   const { searchParams } = new URL(req.url);
-  const posUserEmail = searchParams.get("pos_user_email");
   const branchSlug = searchParams.get("branchSlug");
 
   const db = createAdminClient();
@@ -30,29 +32,7 @@ export async function GET(req: NextRequest) {
   // ── Resolve branch ────────────────────────────────────────────────────────
   let branchId: number | null = null;
 
-  if (posUserEmail) {
-    const { data: posUserData } = await db
-      .from("pos_users")
-      .select("branch_id, is_active")
-      .eq("email", posUserEmail)
-      .single();
-    const posUser = posUserData as Pick<
-      PosUser,
-      "branch_id" | "is_active"
-    > | null;
-
-    if (!posUser) {
-      return NextResponse.json(
-        { message: `POS user "${posUserEmail}" not found` },
-        { status: 404 },
-      );
-    }
-    if (!posUser.is_active) {
-      return NextResponse.json(
-        { message: `POS user "${posUserEmail}" is inactive` },
-        { status: 403 },
-      );
-    }
+  if (posUser) {
     branchId = posUser.branch_id;
   } else if (branchSlug) {
     const { data: branchData } = await db
