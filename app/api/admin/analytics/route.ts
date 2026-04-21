@@ -22,8 +22,21 @@ import type { PosUser } from "@/lib/database.types";
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
-  const posUserEmail = searchParams.get("pos_user_email");
-  const branchSlug = searchParams.get("branchSlug");
+
+  // Accept email/slug from query params OR JSON body (some clients send body with GET)
+  let posUserEmail = searchParams.get("pos_user_email");
+  let branchSlug = searchParams.get("branchSlug");
+
+  if (!posUserEmail && !branchSlug) {
+    try {
+      const body = (await req.json()) as Record<string, unknown>;
+      if (typeof body.pos_user_email === "string")
+        posUserEmail = body.pos_user_email;
+      if (typeof body.branchSlug === "string") branchSlug = body.branchSlug;
+    } catch {
+      // no body or non-JSON body — that's fine, just use query params
+    }
+  }
 
   const db = createAdminClient();
 
