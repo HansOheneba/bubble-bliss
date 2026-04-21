@@ -13,6 +13,11 @@ import type { PosUser } from "@/lib/database.types";
 //   ordersCompleted: number,    — completed orders today
 //   cupsUsed: number,           — total drink cups consumed today (non-shawarma items)
 //   revenueGhs: number          — total revenue from completed orders today (GHS)
+//   paymentBreakdown: Array<{
+//     method: "cash" | "momo" | "hubtel",
+//     orders: number,
+//     revenueGhs: number
+//   }>
 // }
 
 export async function GET(req: NextRequest) {
@@ -70,12 +75,19 @@ export async function GET(req: NextRequest) {
   todayStart.setUTCHours(0, 0, 0, 0);
 
   // ── Fetch today's completed orders with their items ───────────────────────
+  type PaymentMethod = "cash" | "momo" | "hubtel";
   type RawItem = { product_id: number | null; quantity: number };
-  type RawOrder = { total_pesewas: number; items: RawItem[] };
+  type RawOrder = {
+    total_pesewas: number;
+    payment_method: PaymentMethod;
+    items: RawItem[];
+  };
 
   let ordersQuery = db
     .from("orders")
-    .select("total_pesewas, items:order_items(product_id, quantity)")
+    .select(
+      "total_pesewas, payment_method, items:order_items(product_id, quantity)",
+    )
     .eq("status", "completed")
     .gte("created_at", todayStart.toISOString());
 
@@ -132,10 +144,31 @@ export async function GET(req: NextRequest) {
     }
   }
 
+  // ── Payment method breakdown ──────────────────────────────────────────────
+  const methodMap = new Map<
+    PaymentMethod,
+    { method: PaymentMethod; orders: number; revenueGhs: number }
+  >();
+
+  for (const o of orders) {
+    const method = o.payment_method;
+    const existing = methodMap.get(method);
+    const amount = o.total_pesewas / 100;
+    if (existing) {
+      existing.orders += 1;
+      existing.revenueGhs = Math.round((existing.revenueGhs + amount) * 100) / 100;
+    } else {
+      methodMap.set(method, { method, orders: 1, revenueGhs: Math.round(amount * 100) / 100 });
+    }
+  }
+
+  const paymentBreakdown = Array.from(methodMap.values());
+
   return NextResponse.json({
     date: todayStart.toISOString().split("T")[0],
     ordersCompleted,
     cupsUsed,
     revenueGhs: Math.round(revenueGhs * 100) / 100,
+    paymentBreakdown,
   });
 }
