@@ -15,19 +15,43 @@ type ProductRow = Product & {
  * availability. Inactive products are excluded.
  *
  * Optional query params:
- *   ?branchSlug=osu   — filter to products available at a specific branch
- *   ?categorySlug=tea — filter to a specific category
+ *   ?branchSlug=osu          — filter to products available at a specific branch
+ *   ?pos_user_email=x@y.com  — resolve branch from POS user email (alternative to branchSlug)
+ *   ?categorySlug=tea        — filter to a specific category
  */
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const branchSlug = searchParams.get("branchSlug");
+  const posUserEmail = searchParams.get("pos_user_email");
   const categorySlug = searchParams.get("categorySlug");
 
   const db = createAdminClient();
 
-  // Resolve branchId from slug if provided
+  // Resolve branchId — from pos_user_email first, then branchSlug
   let branchId: number | null = null;
-  if (branchSlug) {
+
+  if (posUserEmail) {
+    const { data: posUserData } = await db
+      .from("pos_users")
+      .select("branch_id, is_active")
+      .ilike("email", posUserEmail)
+      .single();
+    const posUser = posUserData as { branch_id: number; is_active: boolean } | null;
+
+    if (!posUser) {
+      return NextResponse.json(
+        { message: `POS user "${posUserEmail}" not found` },
+        { status: 404 },
+      );
+    }
+    if (!posUser.is_active) {
+      return NextResponse.json(
+        { message: `POS user "${posUserEmail}" is inactive` },
+        { status: 403 },
+      );
+    }
+    branchId = posUser.branch_id;
+  } else if (branchSlug) {
     const { data: branch } = await db
       .from("branches")
       .select("*")
