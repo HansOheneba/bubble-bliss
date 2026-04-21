@@ -31,7 +31,15 @@ import {
 import { Badge } from "@/components/ui/badge";
 import RangeSelect from "@/components/admin/range-select";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   buildRangeSeries,
+  getRangeCutoff,
   getRangeTickStep,
   sparseTickLabel,
   type RangeKey,
@@ -54,6 +62,13 @@ type Props = {
   tellerStats: TellerStat[];
   paymentStats: PaymentStat[];
   sourceStats: SourceStat[];
+  cupsUsed: number;
+  branches: string[];
+  branchProductStats: Record<string, ProductStat[]>;
+  branchToppingStats: Record<string, ToppingStat[]>;
+  branchPaymentStats: Record<string, PaymentStat[]>;
+  branchSourceStats: Record<string, SourceStat[]>;
+  branchCupsUsed: Record<string, number>;
 };
 
 const CHART_COLORS = [
@@ -88,20 +103,69 @@ export default function AnalyticsClient({
   tellerStats,
   paymentStats,
   sourceStats,
+  cupsUsed,
+  branches,
+  branchProductStats,
+  branchToppingStats,
+  branchPaymentStats,
+  branchSourceStats,
+  branchCupsUsed,
 }: Props) {
   const [range, setRange] = React.useState<RangeKey>("7d");
+  const [selectedBranch, setSelectedBranch] = React.useState<string>("all");
   const now = new Date();
 
+  // ── Derive active datasets based on selected branch ──────────────────────
+  const activeOrders =
+    selectedBranch === "all"
+      ? slimOrders
+      : slimOrders.filter((o) => o.branchName === selectedBranch);
+  const activeTopProducts =
+    selectedBranch === "all"
+      ? topProducts
+      : (branchProductStats[selectedBranch] ?? []);
+  const activeTopToppings =
+    selectedBranch === "all"
+      ? topToppings
+      : (branchToppingStats[selectedBranch] ?? []);
+  const activePaymentStats =
+    selectedBranch === "all"
+      ? paymentStats
+      : (branchPaymentStats[selectedBranch] ?? []);
+  const activeSourceStats =
+    selectedBranch === "all"
+      ? sourceStats
+      : (branchSourceStats[selectedBranch] ?? []);
+  const activeCupsUsed =
+    selectedBranch === "all" ? cupsUsed : (branchCupsUsed[selectedBranch] ?? 0);
+  const activeBranchStats =
+    selectedBranch === "all"
+      ? branchStats
+      : branchStats.filter((b) => b.name === selectedBranch);
+  const activeTellerStats =
+    selectedBranch === "all"
+      ? tellerStats
+      : tellerStats.filter((t) => t.branch === selectedBranch);
+
   // ── KPI computations ────────────────────────────────────────────────────
-  const totalOrders = slimOrders.length;
-  const totalRevenueGhs = slimOrders.reduce((acc, o) => acc + o.totalGhs, 0);
+  const cutoff = getRangeCutoff(range, now);
+  const rangeActiveOrders = activeOrders.filter(
+    (o) => new Date(o.createdAt) >= cutoff,
+  );
+  const cupsInRange = rangeActiveOrders.reduce(
+    (acc, o) => acc + o.cupsInOrder,
+    0,
+  );
+
+  const totalOrders = activeOrders.length;
+  const totalRevenueGhs = activeOrders.reduce((acc, o) => acc + o.totalGhs, 0);
   const avgOrderValue = totalOrders > 0 ? totalRevenueGhs / totalOrders : 0;
-  const ordersToday = slimOrders.filter((o) =>
+  const ordersToday = activeOrders.filter((o) =>
     isSameDay(new Date(o.createdAt), now),
   ).length;
 
   // ── Range time series ───────────────────────────────────────────────────
-  const rangeSeries = buildRangeSeries(range, slimOrders, now, {
+  const rangeSeries = buildRangeSeries(range, activeOrders, now, {
     getDate: (o) => new Date(o.createdAt),
     getRevenue: (o) => o.totalGhs,
   });
@@ -124,7 +188,7 @@ export default function AnalyticsClient({
   const toppingConfig = {
     qty: { label: "Times ordered", color: "var(--color-chart-5)" },
   };
-  const paymentConfig = paymentStats.reduce(
+  const paymentConfig = activePaymentStats.reduce(
     (acc, s, i) => {
       acc[s.method] = {
         label: s.method.charAt(0).toUpperCase() + s.method.slice(1),
@@ -134,7 +198,7 @@ export default function AnalyticsClient({
     },
     {} as Record<string, { label: string; color: string }>,
   );
-  const sourceConfig = sourceStats.reduce(
+  const sourceConfig = activeSourceStats.reduce(
     (acc, s, i) => {
       acc[s.source] = {
         label: s.source.charAt(0).toUpperCase() + s.source.slice(1),
@@ -145,12 +209,12 @@ export default function AnalyticsClient({
     {} as Record<string, { label: string; color: string }>,
   );
 
-  const paymentPieData = paymentStats.map((s, i) => ({
+  const paymentPieData = activePaymentStats.map((s, i) => ({
     name: s.method,
     value: s.count,
     fill: CHART_COLORS[i % CHART_COLORS.length],
   }));
-  const sourcePieData = sourceStats.map((s, i) => ({
+  const sourcePieData = activeSourceStats.map((s, i) => ({
     name: s.source,
     value: s.count,
     fill: CHART_COLORS[i % CHART_COLORS.length],
@@ -165,17 +229,33 @@ export default function AnalyticsClient({
             Analytics
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
-            All-time performance across branches, products, and tellers.
+            {selectedBranch === "all"
+              ? "All-time performance across branches, products, and tellers."
+              : `Showing data for ${selectedBranch} only.`}
           </p>
         </div>
-        <div className="flex items-center gap-3 text-xs text-muted-foreground">
+        <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+          <span>Branch</span>
+          <Select value={selectedBranch} onValueChange={setSelectedBranch}>
+            <SelectTrigger size="sm" className="min-w-40">
+              <SelectValue placeholder="All branches" />
+            </SelectTrigger>
+            <SelectContent align="end">
+              <SelectItem value="all">All branches</SelectItem>
+              {branches.map((b) => (
+                <SelectItem key={b} value={b}>
+                  {b}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
           <span>Trend range</span>
           <RangeSelect value={range} onValueChange={setRange} />
         </div>
       </div>
 
       {/* KPI cards */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
         <div className="rounded-lg border bg-card p-6">
           <p className="text-sm font-medium text-muted-foreground">
             Total Orders
@@ -215,6 +295,15 @@ export default function AnalyticsClient({
               month: "short",
               day: "numeric",
             })}
+          </p>
+        </div>
+        <div className="rounded-lg border bg-card p-6">
+          <p className="text-sm font-medium text-muted-foreground">Cups Used</p>
+          <p className="mt-2 text-3xl font-bold text-foreground">
+            {cupsInRange}
+          </p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Drink cups, completed orders
           </p>
         </div>
       </div>
@@ -340,7 +429,7 @@ export default function AnalyticsClient({
           <p className="text-sm text-muted-foreground mb-4">
             Total revenue and order count per location
           </p>
-          {branchStats.length === 0 ? (
+          {activeBranchStats.length === 0 ? (
             <p className="text-sm text-muted-foreground py-8 text-center">
               No data yet.
             </p>
@@ -349,7 +438,7 @@ export default function AnalyticsClient({
               config={branchRevenueConfig}
               className="h-52 w-full"
             >
-              <BarChart data={branchStats}>
+              <BarChart data={activeBranchStats}>
                 <CartesianGrid
                   strokeDasharray="3 3"
                   className="stroke-border"
@@ -463,15 +552,17 @@ export default function AnalyticsClient({
             Top products
           </p>
           <p className="text-sm text-muted-foreground mb-4">
-            By units sold across all branches
+            {selectedBranch === "all"
+            ? "By units sold across all branches"
+            : `By units sold at ${selectedBranch}`}
           </p>
-          {topProducts.length === 0 ? (
+          {activeTopProducts.length === 0 ? (
             <p className="text-sm text-muted-foreground py-8 text-center">
               No data yet.
             </p>
           ) : (
             <ChartContainer config={productConfig} className="h-64 w-full">
-              <BarChart data={topProducts} layout="vertical">
+              <BarChart data={activeTopProducts} layout="vertical">
                 <CartesianGrid
                   strokeDasharray="3 3"
                   className="stroke-border"
@@ -512,13 +603,13 @@ export default function AnalyticsClient({
           <p className="text-sm text-muted-foreground mb-4">
             Most frequently added to orders
           </p>
-          {topToppings.length === 0 ? (
+          {activeTopToppings.length === 0 ? (
             <p className="text-sm text-muted-foreground py-8 text-center">
               No data yet.
             </p>
           ) : (
             <ChartContainer config={toppingConfig} className="h-64 w-full">
-              <BarChart data={topToppings} layout="vertical">
+              <BarChart data={activeTopToppings} layout="vertical">
                 <CartesianGrid
                   strokeDasharray="3 3"
                   className="stroke-border"
@@ -564,7 +655,7 @@ export default function AnalyticsClient({
           </p>
         </div>
 
-        {tellerStats.length === 0 ? (
+        {activeTellerStats.length === 0 ? (
           <p className="text-sm text-muted-foreground py-8 text-center border rounded-lg">
             No tellers added yet.
           </p>
@@ -584,7 +675,7 @@ export default function AnalyticsClient({
                 }}
                 className="h-52 w-full"
               >
-                <BarChart data={tellerStats.filter((t) => t.orders > 0)}>
+                <BarChart data={activeTellerStats.filter((t) => t.orders > 0)}>
                   <CartesianGrid
                     strokeDasharray="3 3"
                     className="stroke-border"
@@ -629,7 +720,7 @@ export default function AnalyticsClient({
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {tellerStats.map((t) => (
+                  {activeTellerStats.map((t) => (
                     <TableRow key={t.id}>
                       <TableCell className="font-medium">{t.name}</TableCell>
                       <TableCell className="text-muted-foreground text-sm">

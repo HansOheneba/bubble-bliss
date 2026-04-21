@@ -76,6 +76,10 @@ export async function GET(req: NextRequest) {
     branchId = (branchData as { id: number }).id;
   }
 
+  // When scoped to a POS user, only return today's orders
+  const todayStart = new Date();
+  todayStart.setUTCHours(0, 0, 0, 0);
+
   let query = db
     .from("orders")
     .select(
@@ -85,6 +89,7 @@ export async function GET(req: NextRequest) {
     .range(offset, offset + limit - 1);
 
   if (branchId !== null) query = query.eq("branch_id", branchId);
+  if (posUserEmail) query = query.gte("created_at", todayStart.toISOString());
   if (status) query = query.eq("status", status);
   if (paymentStatus) query = query.eq("payment_status", paymentStatus);
   if (orderSource) query = query.eq("order_source", orderSource);

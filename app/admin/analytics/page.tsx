@@ -22,6 +22,7 @@ export type SlimOrder = {
   totalGhs: number;
   status: string;
   branchName: string;
+  cupsInOrder: number;
 };
 
 export type BranchStat = {
@@ -65,23 +66,69 @@ export type SourceStat = {
 async function fetchAnalyticsData() {
   const db = createAdminClient();
 
-  const { data: rawOrders } = await db
-    .from("orders")
-    .select(
-      "*, branch:branches(*), teller:tellers(*), items:order_items(*, toppings:order_item_toppings(*))",
-    )
-    .order("created_at", { ascending: false });
+  const [{ data: rawOrders }, { data: rawCategories }] = await Promise.all([
+    db
+      .from("orders")
+      .select(
+        "*, branch:branches(*), teller:tellers(*), items:order_items(*, toppings:order_item_toppings(*))",
+      )
+      .order("created_at", { ascending: false }),
+    db.from("categories").select("id, slug"),
+  ]);
 
   const orders = (rawOrders ?? []) as unknown as FullOrder[];
 
+  // ── Cups used (all-time, non-shawarma completed orders) ─────────────────
+  const shawarmaCategory = (
+    rawCategories as { id: number; slug: string }[] | null
+  )?.find((c) => c.slug === "shawarma");
+
+  const shawarmaProductIds = new Set<number>();
+  if (shawarmaCategory) {
+    const { data: shawarmaProducts } = await db
+      .from("products")
+      .select("id")
+      .eq("category_id", shawarmaCategory.id);
+    for (const p of (shawarmaProducts ?? []) as { id: number }[]) {
+      shawarmaProductIds.add(p.id);
+    }
+  }
+
+  let cupsUsed = 0;
+  for (const o of orders) {
+    if (o.status !== "completed") continue;
+    for (const item of o.items) {
+      if (
+        item.product_id === null ||
+        !shawarmaProductIds.has(item.product_id)
+      ) {
+        cupsUsed += item.quantity;
+      }
+    }
+  }
+
   // ── Slim orders for client-side time-series ──────────────────────────────
-  const slimOrders: SlimOrder[] = orders.map((o) => ({
-    id: o.id,
-    createdAt: o.created_at ?? new Date().toISOString(),
-    totalGhs: o.total_pesewas / 100,
-    status: o.status ?? "pending",
-    branchName: o.branch?.name ?? "Unknown",
-  }));
+  const slimOrders: SlimOrder[] = orders.map((o) => {
+    let cupsInOrder = 0;
+    if (o.status === "completed") {
+      for (const item of o.items) {
+        if (
+          item.product_id === null ||
+          !shawarmaProductIds.has(item.product_id)
+        ) {
+          cupsInOrder += item.quantity;
+        }
+      }
+    }
+    return {
+      id: o.id,
+      createdAt: o.created_at ?? new Date().toISOString(),
+      totalGhs: o.total_pesewas / 100,
+      status: o.status ?? "pending",
+      branchName: o.branch?.name ?? "Unknown",
+      cupsInOrder,
+    };
+  });
 
   // ── Revenue + orders by branch ───────────────────────────────────────────
   const branchMap = new Map<string, { orders: number; revenueGhs: number }>();
@@ -210,6 +257,92 @@ async function fetchAnalyticsData() {
     .map(([source, count]) => ({ source, count }))
     .sort((a, b) => b.count - a.count);
 
+  // ── Per-branch breakdowns for client-side branch filter ─────────────────
+  const branches = [...new Set(orders.map((o) => o.branch?.name ?? "Unknown"))]
+    .filter(Boolean)
+    .sort();
+
+  type BranchAccum = {
+    productMap: Map<string, { qty: number; revenueGhs: number }>;
+    toppingMap: Map<string, number>;
+    paymentMap: Map<string, number>;
+    sourceMap: Map<string, number>;
+    cupsUsed: number;
+  };
+
+  const perBranchAccum = new Map<string, BranchAccum>();
+  for (const name of branches) {
+    perBranchAccum.set(name, {
+      productMap: new Map(),
+      toppingMap: new Map(),
+      paymentMap: new Map(),
+      sourceMap: new Map(),
+      cupsUsed: 0,
+    });
+  }
+
+  for (const o of orders) {
+    const branchName = o.branch?.name ?? "Unknown";
+    const acc = perBranchAccum.get(branchName);
+    if (!acc) continue;
+
+    for (const item of o.items) {
+      const cur = acc.productMap.get(item.product_name) ?? {
+        qty: 0,
+        revenueGhs: 0,
+      };
+      cur.qty += item.quantity;
+      cur.revenueGhs += (item.unit_pesewas * item.quantity) / 100;
+      acc.productMap.set(item.product_name, cur);
+
+      for (const t of item.toppings) {
+        acc.toppingMap.set(
+          t.topping_name,
+          (acc.toppingMap.get(t.topping_name) ?? 0) + 1,
+        );
+      }
+
+      if (o.status === "completed") {
+        if (
+          item.product_id === null ||
+          !shawarmaProductIds.has(item.product_id)
+        ) {
+          acc.cupsUsed += item.quantity;
+        }
+      }
+    }
+
+    const method = o.payment_method ?? "hubtel";
+    acc.paymentMap.set(method, (acc.paymentMap.get(method) ?? 0) + 1);
+
+    const source = o.order_source ?? "online";
+    acc.sourceMap.set(source, (acc.sourceMap.get(source) ?? 0) + 1);
+  }
+
+  const branchProductStats: Record<string, ProductStat[]> = {};
+  const branchToppingStats: Record<string, ToppingStat[]> = {};
+  const branchPaymentStats: Record<string, PaymentStat[]> = {};
+  const branchSourceStats: Record<string, SourceStat[]> = {};
+  const branchCupsUsed: Record<string, number> = {};
+
+  for (const [name, acc] of perBranchAccum) {
+    branchProductStats[name] = [...acc.productMap.entries()]
+      .map(([n, s]) => ({ name: n, ...s }))
+      .sort((a, b) => b.qty - a.qty)
+      .slice(0, 10);
+    branchToppingStats[name] = [...acc.toppingMap.entries()]
+      .map(([n, qty]) => ({ name: n, qty }))
+      .sort((a, b) => b.qty - a.qty)
+      .slice(0, 10);
+    branchPaymentStats[name] = [...acc.paymentMap.entries()]
+      .map(([method, count]) => ({ method, count }))
+      .sort((a, b) => b.count - a.count);
+    branchSourceStats[name] = [...acc.sourceMap.entries()]
+      .map(([source, count]) => ({ source, count }))
+      .sort((a, b) => b.count - a.count);
+    branchCupsUsed[name] = acc.cupsUsed;
+  }
+
   return {
     slimOrders,
     branchStats,
@@ -218,6 +351,13 @@ async function fetchAnalyticsData() {
     tellerStats,
     paymentStats,
     sourceStats,
+    cupsUsed,
+    branches,
+    branchProductStats,
+    branchToppingStats,
+    branchPaymentStats,
+    branchSourceStats,
+    branchCupsUsed,
   };
 }
 

@@ -1,4 +1,4 @@
-export type RangeKey = "24h" | "7d" | "30d" | "6m";
+export type RangeKey = "today" | "24h" | "7d" | "30d" | "6m";
 
 type RangeGranularity = "hour" | "day" | "month";
 
@@ -9,6 +9,7 @@ type RangeMeta = {
 };
 
 export const RANGE_OPTIONS: { value: RangeKey; label: string }[] = [
+  { value: "today", label: "Today" },
   { value: "24h", label: "24h" },
   { value: "7d", label: "7d" },
   { value: "30d", label: "30d" },
@@ -16,6 +17,7 @@ export const RANGE_OPTIONS: { value: RangeKey; label: string }[] = [
 ];
 
 const RANGE_META: Record<RangeKey, RangeMeta> = {
+  today: { granularity: "hour", points: 24, tickStep: 3 },
   "24h": { granularity: "hour", points: 24, tickStep: 3 },
   "7d": { granularity: "day", points: 7, tickStep: 2 },
   "30d": { granularity: "day", points: 30, tickStep: 5 },
@@ -66,6 +68,23 @@ function getBucketKey(date: Date, granularity: RangeGranularity) {
 }
 
 function getRangeBuckets(range: RangeKey, now: Date) {
+  // "today" — hourly buckets from midnight to current hour
+  if (range === "today") {
+    const midnight = new Date(now);
+    midnight.setHours(0, 0, 0, 0);
+    const currentHour = now.getHours();
+    const buckets: RangeBucket[] = [];
+    for (let h = 0; h <= currentHour; h++) {
+      const d = new Date(midnight);
+      d.setHours(h);
+      buckets.push({
+        key: getBucketKey(d, "hour"),
+        label: d.toLocaleTimeString("en-GH", { hour: "numeric" }),
+      });
+    }
+    return { buckets, granularity: "hour" as RangeGranularity };
+  }
+
   const { granularity, points } = RANGE_META[range];
   const buckets: RangeBucket[] = [];
 
@@ -146,4 +165,36 @@ export function getRangeTickStep(range: RangeKey) {
 
 export function sparseTickLabel(value: string, index: number, step: number) {
   return index % step === 0 ? value : "";
+}
+
+// Returns the earliest Date that falls within the selected range window.
+// Use this to filter orders for KPI cards that should respond to the range.
+export function getRangeCutoff(range: RangeKey, now: Date): Date {
+  switch (range) {
+    case "today": {
+      const midnight = new Date(now);
+      midnight.setHours(0, 0, 0, 0);
+      return midnight;
+    }
+    case "24h": {
+      const d = new Date(now);
+      d.setHours(d.getHours() - 24);
+      return d;
+    }
+    case "7d": {
+      const d = new Date(now);
+      d.setDate(d.getDate() - 7);
+      return d;
+    }
+    case "30d": {
+      const d = new Date(now);
+      d.setDate(d.getDate() - 30);
+      return d;
+    }
+    case "6m": {
+      const d = new Date(now);
+      d.setMonth(d.getMonth() - 6);
+      return d;
+    }
+  }
 }
