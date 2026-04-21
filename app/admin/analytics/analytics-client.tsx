@@ -259,7 +259,9 @@ export default function AnalyticsClient({
           <p className="mt-2 text-3xl font-bold text-foreground">
             {totalOrders}
           </p>
-          <p className="mt-1 text-xs text-muted-foreground">{getRangeLabel(range)}</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {getRangeLabel(range)}
+          </p>
         </div>
         <div className="rounded-lg border bg-card p-6">
           <p className="text-sm font-medium text-muted-foreground">
@@ -268,7 +270,9 @@ export default function AnalyticsClient({
           <p className="mt-2 text-3xl font-bold text-foreground">
             {formatMoney(totalRevenueGhs)}
           </p>
-          <p className="mt-1 text-xs text-muted-foreground">{getRangeLabel(range)}</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {getRangeLabel(range)}
+          </p>
         </div>
         <div className="rounded-lg border bg-card p-6">
           <p className="text-sm font-medium text-muted-foreground">
@@ -286,7 +290,9 @@ export default function AnalyticsClient({
           <p className="mt-2 text-3xl font-bold text-foreground">
             {completedInRange}
           </p>
-          <p className="mt-1 text-xs text-muted-foreground">{getRangeLabel(range)}</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {getRangeLabel(range)}
+          </p>
         </div>
         <div className="rounded-lg border bg-card p-6">
           <p className="text-sm font-medium text-muted-foreground">Cups Used</p>

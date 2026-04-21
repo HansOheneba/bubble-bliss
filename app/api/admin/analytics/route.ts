@@ -10,9 +10,9 @@ import type { PosUser } from "@/lib/database.types";
 // Response:
 // {
 //   date: "YYYY-MM-DD",
-//   ordersCompleted: number,    — completed orders today
+//   ordersCompleted: number,    — paid or completed orders today
 //   cupsUsed: number,           — total drink cups consumed today (non-shawarma items)
-//   revenueGhs: number          — total revenue from completed orders today (GHS)
+//   revenueGhs: number          — total revenue from paid or completed orders today (GHS)
 //   paymentBreakdown: Array<{
 //     method: "cash" | "momo" | "hubtel",
 //     orders: number,
@@ -74,7 +74,7 @@ export async function GET(req: NextRequest) {
   const todayStart = new Date(now);
   todayStart.setUTCHours(0, 0, 0, 0);
 
-  // ── Fetch today's completed orders with their items ───────────────────────
+  // ── Fetch today's paid/completed orders with their items ────────────────
   type PaymentMethod = "cash" | "momo" | "hubtel";
   type RawItem = { product_id: number | null; quantity: number };
   type RawOrder = {
@@ -88,7 +88,7 @@ export async function GET(req: NextRequest) {
     .select(
       "total_pesewas, payment_method, items:order_items(product_id, quantity)",
     )
-    .eq("status", "completed")
+    .in("status", ["paid", "completed"])
     .gte("created_at", todayStart.toISOString());
 
   if (branchId !== null) {

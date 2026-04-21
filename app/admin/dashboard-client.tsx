@@ -266,7 +266,9 @@ export default function DashboardClient({ orders, products, toppings }: Props) {
           <div className="mt-2 text-3xl font-bold text-foreground">
             {deliveredOrders.length}
           </div>
-          <div className="mt-1 text-xs text-muted-foreground">{getRangeLabel(range)}</div>
+          <div className="mt-1 text-xs text-muted-foreground">
+            {getRangeLabel(range)}
+          </div>
         </div>
       </div>
 
