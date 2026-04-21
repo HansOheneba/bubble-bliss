@@ -156,9 +156,14 @@ export async function GET(req: NextRequest) {
     const amount = o.total_pesewas / 100;
     if (existing) {
       existing.orders += 1;
-      existing.revenueGhs = Math.round((existing.revenueGhs + amount) * 100) / 100;
+      existing.revenueGhs =
+        Math.round((existing.revenueGhs + amount) * 100) / 100;
     } else {
-      methodMap.set(method, { method, orders: 1, revenueGhs: Math.round(amount * 100) / 100 });
+      methodMap.set(method, {
+        method,
+        orders: 1,
+        revenueGhs: Math.round(amount * 100) / 100,
+      });
     }
   }
 
