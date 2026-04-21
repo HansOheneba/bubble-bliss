@@ -257,28 +257,34 @@ export type Database = {
         Row: {
           product_id: number;
           branch_id: number;
+          price_in_pesewas: number | null;
         };
         Insert: {
           product_id: number;
           branch_id: number;
+          price_in_pesewas?: number | null;
         };
         Update: {
           product_id?: number;
           branch_id?: number;
+          price_in_pesewas?: number | null;
         };
       };
       topping_branch_availability: {
         Row: {
           topping_id: number;
           branch_id: number;
+          price_in_pesewas: number | null;
         };
         Insert: {
           topping_id: number;
           branch_id: number;
+          price_in_pesewas?: number | null;
         };
         Update: {
           topping_id?: number;
           branch_id?: number;
+          price_in_pesewas?: number | null;
         };
       };
       tellers: {
@@ -356,11 +362,11 @@ export type OrderWithItems = Order & {
 export type ProductWithVariants = Product & {
   variants: ProductVariant[];
   category: Category | null;
-  branch_availability: { branch_id: number }[];
+  branch_availability: { branch_id: number; price_in_pesewas: number | null }[];
 };
 
 export type ToppingWithBranchAvailability = Topping & {
-  branch_availability: { branch_id: number }[];
+  branch_availability: { branch_id: number; price_in_pesewas: number | null }[];
 };
 
 export type CategoryWithCount = Category & {

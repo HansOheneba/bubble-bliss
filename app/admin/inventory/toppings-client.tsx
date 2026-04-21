@@ -31,7 +31,7 @@ import type {
   ToppingWithBranchAvailability,
   Branch,
 } from "@/lib/database.types";
-import type { ToppingInput } from "@/lib/actions";
+import type { ToppingInput, ToppingBranchEntry } from "@/lib/actions";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -47,7 +47,7 @@ type FormValues = {
   is_active: boolean;
   in_stock: boolean;
   restrict_branches: boolean;
-  branch_ids: number[];
+  branch_entries: { branch_id: number; price_ghs: string }[];
 };
 
 // ── Utilities ─────────────────────────────────────────────────────────────────
@@ -68,7 +68,7 @@ function defaultForm(): FormValues {
     is_active: true,
     in_stock: true,
     restrict_branches: false,
-    branch_ids: [],
+    branch_entries: [],
   };
 }
 
@@ -80,13 +80,16 @@ function toppingToForm(t: ToppingWithBranchAvailability): FormValues {
     is_active: t.is_active ?? true,
     in_stock: t.in_stock ?? true,
     restrict_branches: (t.branch_availability?.length ?? 0) > 0,
-    branch_ids: t.branch_availability?.map((ba) => ba.branch_id) ?? [],
+    branch_entries: t.branch_availability?.map((ba) => ({
+      branch_id: ba.branch_id,
+      price_ghs: ba.price_in_pesewas != null ? String(ba.price_in_pesewas / 100) : "",
+    })) ?? [],
   };
 }
 
 function formToPayload(values: FormValues): {
   topping: ToppingInput;
-  branchIds: number[];
+  branchEntries: ToppingBranchEntry[];
 } {
   return {
     topping: {
@@ -96,7 +99,14 @@ function formToPayload(values: FormValues): {
       is_active: values.is_active,
       in_stock: values.in_stock,
     },
-    branchIds: values.restrict_branches ? values.branch_ids : [],
+    branchEntries: values.restrict_branches
+      ? values.branch_entries.map((e) => ({
+          branch_id: e.branch_id,
+          price_in_pesewas: e.price_ghs
+            ? Math.round(parseFloat(e.price_ghs) * 100)
+            : null,
+        }))
+      : [],
   };
 }
 
@@ -165,10 +175,11 @@ function ToppingFormSheet({
   }
 
   function toggleBranch(branchId: number) {
-    const ids = form.branch_ids.includes(branchId)
-      ? form.branch_ids.filter((id) => id !== branchId)
-      : [...form.branch_ids, branchId];
-    setField("branch_ids", ids);
+    const exists = form.branch_entries.some((e) => e.branch_id === branchId);
+    const entries = exists
+      ? form.branch_entries.filter((e) => e.branch_id !== branchId)
+      : [...form.branch_entries, { branch_id: branchId, price_ghs: "" }];
+    setField("branch_entries", entries);
   }
 
   function validate(): string | null {
@@ -186,10 +197,10 @@ function ToppingFormSheet({
     }
     setSubmitting(true);
     setFormError(null);
-    const { topping, branchIds } = formToPayload(form);
+    const { topping, branchEntries } = formToPayload(form);
     const result = editingTopping
-      ? await updateTopping(editingTopping.id, topping, branchIds)
-      : await createTopping(topping, branchIds);
+      ? await updateTopping(editingTopping.id, topping, branchEntries)
+      : await createTopping(topping, branchEntries);
     if (result.error) {
       setFormError(result.error);
     } else {
@@ -283,7 +294,7 @@ function ToppingFormSheet({
                     checked={!form.restrict_branches}
                     onChange={() => {
                       setField("restrict_branches", false);
-                      setField("branch_ids", []);
+                      setField("branch_entries", []);
                     }}
                     className="h-4 w-4"
                   />
@@ -301,21 +312,46 @@ function ToppingFormSheet({
                 </label>
               </div>
               {form.restrict_branches && (
-                <div className="space-y-1.5 pl-6">
-                  {branches.map((branch) => (
-                    <label
-                      key={branch.id}
-                      className="flex items-center gap-2 text-sm cursor-pointer"
-                    >
-                      <input
-                        type="checkbox"
-                        checked={form.branch_ids.includes(branch.id)}
-                        onChange={() => toggleBranch(branch.id)}
-                        className="h-4 w-4 rounded border-border"
-                      />
-                      {branch.name}
-                    </label>
-                  ))}
+                <div className="space-y-2 pl-6">
+                  {branches.map((branch) => {
+                    const entry = form.branch_entries.find(
+                      (e) => e.branch_id === branch.id,
+                    );
+                    const isChecked = !!entry;
+                    return (
+                      <div key={branch.id} className="space-y-1">
+                        <label className="flex items-center gap-2 text-sm cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            onChange={() => toggleBranch(branch.id)}
+                            className="h-4 w-4 rounded border-border"
+                          />
+                          {branch.name}
+                        </label>
+                        {isChecked && entry && (
+                          <div className="pl-6">
+                            <Input
+                              type="number"
+                              step="0.01"
+                              min="0"
+                              value={entry.price_ghs}
+                              onChange={(e) => {
+                                const updated = form.branch_entries.map((en) =>
+                                  en.branch_id === branch.id
+                                    ? { ...en, price_ghs: e.target.value }
+                                    : en,
+                                );
+                                setField("branch_entries", updated);
+                              }}
+                              placeholder="Price override (GHS) — leave blank for default"
+                              className="h-7 text-xs"
+                            />
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </div>

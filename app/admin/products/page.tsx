@@ -12,7 +12,7 @@ async function fetchPageData() {
     supabase
       .from("products")
       .select(
-        `*, variants:product_variants(*), category:categories(*), branch_availability:product_branch_availability(branch_id)`,
+        `*, variants:product_variants(*), category:categories(*), branch_availability:product_branch_availability(branch_id, price_in_pesewas)`,
       )
       .order("sort_order", { ascending: true }),
     supabase.from("branches").select("*").order("name", { ascending: true }),

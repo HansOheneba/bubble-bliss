@@ -3,7 +3,7 @@ import { createAdminClient } from "@/lib/supabase";
 import type { Topping } from "@/lib/database.types";
 
 type ToppingRow = Topping & {
-  branch_availability: { branch_id: number }[];
+  branch_availability: { branch_id: number; price_in_pesewas: number | null }[];
 };
 
 /**
@@ -30,7 +30,10 @@ export async function GET(req: NextRequest) {
       .select("branch_id, is_active")
       .ilike("email", posUserEmail)
       .single();
-    const posUser = posUserData as { branch_id: number; is_active: boolean } | null;
+    const posUser = posUserData as {
+      branch_id: number;
+      is_active: boolean;
+    } | null;
 
     if (!posUser) {
       return NextResponse.json(
@@ -67,7 +70,7 @@ export async function GET(req: NextRequest) {
     .select(
       `
       *,
-      branch_availability:topping_branch_availability(branch_id)
+      branch_availability:topping_branch_availability(branch_id, price_in_pesewas)
       `,
     )
     .eq("is_active", true)
@@ -93,13 +96,20 @@ export async function GET(req: NextRequest) {
       })
     : toppings;
 
-  const shaped = filtered.map((t) => ({
-    id: t.id,
-    name: t.name,
-    price_in_pesewas: t.price_in_pesewas,
-    sort_order: t.sort_order,
-    available_branch_ids: t.branch_availability.map((a) => a.branch_id),
-  }));
+  const shaped = filtered.map((t) => {
+    const branchAvail =
+      branchId !== null
+        ? t.branch_availability.find((a) => a.branch_id === branchId)
+        : undefined;
+    const effectivePrice = branchAvail?.price_in_pesewas ?? t.price_in_pesewas;
+    return {
+      id: t.id,
+      name: t.name,
+      price_in_pesewas: effectivePrice,
+      sort_order: t.sort_order,
+      available_branch_ids: t.branch_availability.map((a) => a.branch_id),
+    };
+  });
 
   return NextResponse.json({ toppings: shaped });
 }

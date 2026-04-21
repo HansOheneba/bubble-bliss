@@ -60,6 +60,16 @@ export type VariantInput = {
   sort_order: number;
 };
 
+export type BranchEntry = {
+  branch_id: number;
+  price_in_pesewas: number | null;
+};
+
+export type ToppingBranchEntry = {
+  branch_id: number;
+  price_in_pesewas: number | null;
+};
+
 export type ToppingInput = {
   name: string;
   price_in_pesewas: number;
@@ -82,7 +92,7 @@ type CreateResult = { id?: number; error?: string };
 export async function createProduct(
   product: ProductInput,
   variants: VariantInput[],
-  branchIds: number[],
+  branchEntries: BranchEntry[],
 ): Promise<CreateResult> {
   try {
     const supabase = createAdminClient();
@@ -105,11 +115,12 @@ export async function createProduct(
       if (varErr) throw new Error(varErr.message);
     }
 
-    if (branchIds.length > 0) {
+    if (branchEntries.length > 0) {
       await supabase.from("product_branch_availability").insert(
-        branchIds.map((bid) => ({
+        branchEntries.map((e) => ({
           product_id: (data as { id: number }).id,
-          branch_id: bid,
+          branch_id: e.branch_id,
+          price_in_pesewas: e.price_in_pesewas,
         })) as never,
       );
     }
@@ -125,7 +136,7 @@ export async function updateProduct(
   id: number,
   product: ProductInput,
   variants: VariantInput[],
-  branchIds: number[],
+  branchEntries: BranchEntry[],
 ): Promise<ActionResult> {
   try {
     const supabase = createAdminClient();
@@ -150,11 +161,15 @@ export async function updateProduct(
       .from("product_branch_availability")
       .delete()
       .eq("product_id", id);
-    if (branchIds.length > 0) {
+    if (branchEntries.length > 0) {
       await supabase
         .from("product_branch_availability")
         .insert(
-          branchIds.map((bid) => ({ product_id: id, branch_id: bid })) as never,
+          branchEntries.map((e) => ({
+            product_id: id,
+            branch_id: e.branch_id,
+            price_in_pesewas: e.price_in_pesewas,
+          })) as never,
         );
     }
 
@@ -186,7 +201,7 @@ export async function deleteProduct(id: number): Promise<ActionResult> {
 
 export async function createTopping(
   topping: ToppingInput,
-  branchIds: number[],
+  branchEntries: ToppingBranchEntry[],
 ): Promise<CreateResult> {
   try {
     const supabase = createAdminClient();
@@ -197,11 +212,12 @@ export async function createTopping(
       .single();
     if (error || !data) throw new Error(error?.message ?? "Insert failed");
 
-    if (branchIds.length > 0) {
+    if (branchEntries.length > 0) {
       await supabase.from("topping_branch_availability").insert(
-        branchIds.map((bid) => ({
+        branchEntries.map((e) => ({
           topping_id: (data as { id: number }).id,
-          branch_id: bid,
+          branch_id: e.branch_id,
+          price_in_pesewas: e.price_in_pesewas,
         })) as never,
       );
     }
@@ -216,7 +232,7 @@ export async function createTopping(
 export async function updateTopping(
   id: number,
   topping: ToppingInput,
-  branchIds: number[],
+  branchEntries: ToppingBranchEntry[],
 ): Promise<ActionResult> {
   try {
     const supabase = createAdminClient();
@@ -230,11 +246,15 @@ export async function updateTopping(
       .from("topping_branch_availability")
       .delete()
       .eq("topping_id", id);
-    if (branchIds.length > 0) {
+    if (branchEntries.length > 0) {
       await supabase
         .from("topping_branch_availability")
         .insert(
-          branchIds.map((bid) => ({ topping_id: id, branch_id: bid })) as never,
+          branchEntries.map((e) => ({
+            topping_id: id,
+            branch_id: e.branch_id,
+            price_in_pesewas: e.price_in_pesewas,
+          })) as never,
         );
     }
 

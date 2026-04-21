@@ -5,7 +5,7 @@ import type { Product, ProductVariant, Category } from "@/lib/database.types";
 type ProductRow = Product & {
   category: Category | null;
   variants: ProductVariant[];
-  branch_availability: { branch_id: number }[];
+  branch_availability: { branch_id: number; price_in_pesewas: number | null }[];
 };
 
 /**
@@ -36,7 +36,10 @@ export async function GET(req: NextRequest) {
       .select("branch_id, is_active")
       .ilike("email", posUserEmail)
       .single();
-    const posUser = posUserData as { branch_id: number; is_active: boolean } | null;
+    const posUser = posUserData as {
+      branch_id: number;
+      is_active: boolean;
+    } | null;
 
     if (!posUser) {
       return NextResponse.json(
@@ -94,7 +97,7 @@ export async function GET(req: NextRequest) {
       *,
       category:categories(*),
       variants:product_variants(*),
-      branch_availability:product_branch_availability(branch_id)
+      branch_availability:product_branch_availability(branch_id, price_in_pesewas)
       `,
     )
     .eq("is_active", true)
@@ -131,13 +134,20 @@ export async function GET(req: NextRequest) {
       (a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0),
     );
 
+    // Use branch-specific price if set, otherwise fall back to product default
+    const branchAvail =
+      branchId !== null
+        ? p.branch_availability.find((a) => a.branch_id === branchId)
+        : undefined;
+    const effectivePrice = branchAvail?.price_in_pesewas ?? p.price_in_pesewas;
+
     return {
       id: p.id,
       name: p.name,
       slug: p.slug,
       description: p.description,
       image: p.image,
-      price_in_pesewas: p.price_in_pesewas,
+      price_in_pesewas: effectivePrice,
       in_stock: p.in_stock,
       sort_order: p.sort_order,
       category: p.category,
