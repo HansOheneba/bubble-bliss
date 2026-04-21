@@ -1,12 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase";
-import { requireAdmin } from "@/lib/admin-auth";
-import { authenticatePosRequest } from "@/lib/pos-auth";
 import type {
   Order,
   OrderItem,
   OrderItemTopping,
   Branch,
+  PosUser,
 } from "@/lib/database.types";
 
 type OrderRow = Order & {
@@ -15,8 +14,8 @@ type OrderRow = Order & {
 };
 
 // ── Query params ──────────────────────────────────────────────────────────────
-// Auth: POS Bearer key (auto-scopes to their branch + today) OR admin Clerk session
-// ?branchSlug=cape-coast          — admin only: filter by branch slug
+// ?pos_user_email=hans@gmail.com  — resolve branch from POS user (preferred for POS)
+// ?branchSlug=cape-coast          — filter by branch slug (alternative)
 // ?status=pending                 — filter by order status
 // ?paymentStatus=unpaid           — filter by payment status
 // ?orderSource=instore            — filter by source
@@ -24,13 +23,8 @@ type OrderRow = Order & {
 // ?offset=0                       — pagination offset
 
 export async function GET(req: NextRequest) {
-  const posUser = await authenticatePosRequest(req);
-  const isAdmin = posUser ? false : await requireAdmin();
-  if (!posUser && !isAdmin) {
-    return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
-  }
-
   const { searchParams } = new URL(req.url);
+  const posUserEmail = searchParams.get("pos_user_email");
   const branchSlug = searchParams.get("branchSlug");
   const status = searchParams.get("status");
   const paymentStatus = searchParams.get("paymentStatus");
@@ -40,11 +34,32 @@ export async function GET(req: NextRequest) {
 
   const db = createAdminClient();
 
-  // POS key: branch is always the one tied to their API key
-  // Admin: branch is optional, resolved from branchSlug query param
+  // Resolve branchId — from POS user email, or from branchSlug
   let branchId: number | null = null;
 
-  if (posUser) {
+  if (posUserEmail) {
+    const { data: posUserData } = await db
+      .from("pos_users")
+      .select("branch_id, is_active")
+      .eq("email", posUserEmail)
+      .single();
+    const posUser = posUserData as Pick<
+      PosUser,
+      "branch_id" | "is_active"
+    > | null;
+
+    if (!posUser) {
+      return NextResponse.json(
+        { message: `POS user "${posUserEmail}" not found` },
+        { status: 404 },
+      );
+    }
+    if (!posUser.is_active) {
+      return NextResponse.json(
+        { message: `POS user "${posUserEmail}" is inactive` },
+        { status: 403 },
+      );
+    }
     branchId = posUser.branch_id;
   } else if (branchSlug) {
     const { data: branchData } = await db
@@ -74,7 +89,7 @@ export async function GET(req: NextRequest) {
     .range(offset, offset + limit - 1);
 
   if (branchId !== null) query = query.eq("branch_id", branchId);
-  if (posUser) query = query.gte("created_at", todayStart.toISOString());
+  if (posUserEmail) query = query.gte("created_at", todayStart.toISOString());
   if (status) query = query.eq("status", status);
   if (paymentStatus) query = query.eq("payment_status", paymentStatus);
   if (orderSource) query = query.eq("order_source", orderSource);

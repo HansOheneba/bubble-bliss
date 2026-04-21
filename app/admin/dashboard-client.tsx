@@ -33,6 +33,7 @@ import { Badge } from "@/components/ui/badge";
 import RangeSelect from "@/components/admin/range-select";
 import {
   buildRangeSeries,
+  getRangeCutoff,
   getRangeLabel,
   getRangeTickStep,
   sparseTickLabel,
@@ -69,14 +70,6 @@ function pesewasToGhs(pesewas: number) {
   return pesewas / 100;
 }
 
-function isSameDay(a: Date, b: Date) {
-  return (
-    a.getFullYear() === b.getFullYear() &&
-    a.getMonth() === b.getMonth() &&
-    a.getDate() === b.getDate()
-  );
-}
-
 function StatusBadge({ status }: { status: string }) {
   const styles: Record<string, string> = {
     pending:
@@ -109,9 +102,13 @@ export default function DashboardClient({ orders, products, toppings }: Props) {
   const [range, setRange] = React.useState<RangeKey>("7d");
   const now = new Date();
 
-  const ordersToday = orders.filter((o) =>
-    o.created_at ? isSameDay(new Date(o.created_at), now) : false,
+  const cutoff = getRangeCutoff(range, now);
+  const rangeOrders = orders.filter((o) =>
+    o.created_at ? new Date(o.created_at) >= cutoff : false,
   );
+  const rangeRevenuePaid = rangeOrders
+    .filter((o) => o.payment_status === "paid")
+    .reduce((acc, o) => acc + pesewasToGhs(o.total_pesewas), 0);
 
   const openOrders = orders.filter(
     (o) =>
@@ -120,14 +117,11 @@ export default function DashboardClient({ orders, products, toppings }: Props) {
       o.status === "preparing",
   );
 
-  const deliveredOrders = orders.filter((o) => o.status === "delivered");
+  const deliveredOrders = rangeOrders.filter((o) => o.status === "delivered");
   const revenueDelivered = deliveredOrders.reduce(
     (acc, o) => acc + pesewasToGhs(o.total_pesewas),
     0,
   );
-  const revenueTodayGhs = ordersToday
-    .filter((o) => o.payment_status === "paid")
-    .reduce((acc, o) => acc + pesewasToGhs(o.total_pesewas), 0);
 
   const avgOrderValue =
     deliveredOrders.length > 0 ? revenueDelivered / deliveredOrders.length : 0;
@@ -138,7 +132,7 @@ export default function DashboardClient({ orders, products, toppings }: Props) {
 
   // Branch breakdown
   const branchCounts: Record<string, number> = {};
-  for (const o of orders) {
+  for (const o of rangeOrders) {
     const branchName = o.branch?.name ?? "Unknown";
     branchCounts[branchName] = (branchCounts[branchName] ?? 0) + 1;
   }
@@ -234,13 +228,13 @@ export default function DashboardClient({ orders, products, toppings }: Props) {
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <div className="rounded-lg border bg-card p-6">
           <div className="text-sm font-medium text-muted-foreground">
-            Orders Today
+            Orders
           </div>
           <div className="mt-2 text-3xl font-bold text-foreground">
-            {ordersToday.length}
+            {rangeOrders.length}
           </div>
           <div className="mt-1 text-xs text-muted-foreground">
-            Revenue: {formatMoney(revenueTodayGhs)}
+            Revenue: {formatMoney(rangeRevenuePaid)}
           </div>
         </div>
         <div className="rounded-lg border bg-card p-6">
@@ -267,12 +261,12 @@ export default function DashboardClient({ orders, products, toppings }: Props) {
         </div>
         <div className="rounded-lg border bg-card p-6">
           <div className="text-sm font-medium text-muted-foreground">
-            Total Orders
+            Completed
           </div>
           <div className="mt-2 text-3xl font-bold text-foreground">
-            {orders.length}
+            {deliveredOrders.length}
           </div>
-          <div className="mt-1 text-xs text-muted-foreground">All time</div>
+          <div className="mt-1 text-xs text-muted-foreground">{getRangeLabel(range)}</div>
         </div>
       </div>
 

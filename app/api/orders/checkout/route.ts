@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase";
 import { normalisePhone, initiateHubtelCheckout } from "@/lib/hubtel";
-import { authenticatePosRequest } from "@/lib/pos-auth";
 import type {
   Branch,
   Product,
   ProductVariant,
   Topping,
+  PosUser,
 } from "@/lib/database.types";
 
 // ── Request shape ─────────────────────────────────────────────────────────────
@@ -28,11 +28,12 @@ type ItemInput = {
 type OrderSource = "online" | "instore";
 
 // Two valid calling modes:
-//  1. POS mode:    send Authorization: Bearer <api-key> — branch + orderSource derived server-side
+//  1. POS mode:    provide pos_user_email — branch + orderSource derived server-side
 //  2. Online mode: provide branchSlug + optional orderSource
 type CheckoutBody = {
   phone: string;
   locationText: string;
+  pos_user_email?: string;
   branchSlug?: string;
   payeeName?: string;
   payeeEmail?: string;
@@ -83,12 +84,9 @@ export async function POST(req: NextRequest) {
     notes,
     branchSlug,
     orderSource,
+    pos_user_email,
     items,
   } = body;
-
-  // ── Detect calling mode ───────────────────────────────────────────────────
-  const posUser = await authenticatePosRequest(req);
-  const isPosMode = !!posUser;
 
   // ── Basic validation ──────────────────────────────────────────────────────
 
@@ -103,17 +101,17 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // Must provide either a POS Bearer token (POS mode) or branchSlug (online mode)
-  if (!isPosMode && !branchSlug) {
+  // Must provide either pos_user_email (POS mode) or branchSlug (online mode)
+  if (!pos_user_email && !branchSlug) {
     return NextResponse.json(
-      { message: "Either a POS API key (Authorization header) or branchSlug is required" },
+      { message: "Either pos_user_email or branchSlug is required" },
       { status: 400 },
     );
   }
 
-  if (isPosMode && branchSlug) {
+  if (pos_user_email && branchSlug) {
     return NextResponse.json(
-      { message: "Provide either a POS API key or branchSlug, not both" },
+      { message: "Provide either pos_user_email or branchSlug, not both" },
       { status: 400 },
     );
   }
@@ -148,15 +146,34 @@ export async function POST(req: NextRequest) {
   let branchId: number;
   let resolvedOrderSource: OrderSource;
 
-  if (isPosMode) {
-    // POS mode: branch + identity come from the authenticated API key
-    if (!posUser!.branch || !posUser!.branch.is_active) {
+  if (pos_user_email) {
+    // POS mode: look up user by email, derive branch + force instore
+    const { data: posUserData } = await db
+      .from("pos_users")
+      .select("*, branch:branches(*)")
+      .eq("email", pos_user_email)
+      .single();
+    const posUser = posUserData as (PosUser & { branch: Branch | null }) | null;
+
+    if (!posUser) {
       return NextResponse.json(
-        { message: "Branch linked to this POS device is inactive" },
+        { message: `POS user "${pos_user_email}" not found` },
         { status: 400 },
       );
     }
-    branchId = posUser!.branch_id;
+    if (!posUser.is_active) {
+      return NextResponse.json(
+        { message: `POS user "${pos_user_email}" is inactive` },
+        { status: 400 },
+      );
+    }
+    if (!posUser.branch || !posUser.branch.is_active) {
+      return NextResponse.json(
+        { message: `Branch linked to "${pos_user_email}" is inactive` },
+        { status: 400 },
+      );
+    }
+    branchId = posUser.branch_id;
     resolvedOrderSource = "instore";
   } else {
     // Online mode: resolve branch from branchSlug

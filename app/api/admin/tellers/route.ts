@@ -1,32 +1,46 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase";
-import { requireAdmin } from "@/lib/admin-auth";
-import { authenticatePosRequest } from "@/lib/pos-auth";
-import type { Teller, Branch } from "@/lib/database.types";
+import type { Teller, Branch, PosUser } from "@/lib/database.types";
 
 type TellerRow = Teller & { branch: Branch | null };
 
 // GET /api/admin/tellers
-// Auth: POS Bearer key (scopes to their branch) OR admin Clerk session
-// ?branchSlug=cape-coast — admin only: filter by branch slug
-// No branchSlug + admin = all tellers
+// ?pos_user_email=hans@gmail.com  — fetch tellers for the branch linked to this POS user
+// ?branchSlug=cape-coast           — fetch tellers for a specific branch (alternative)
+// No filter returns all tellers (admin use)
 
 export async function GET(req: NextRequest) {
-  const posUser = await authenticatePosRequest(req);
-  const isAdmin = posUser ? false : await requireAdmin();
-  if (!posUser && !isAdmin) {
-    return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
-  }
-
   const { searchParams } = new URL(req.url);
+  const posUserEmail = searchParams.get("pos_user_email");
   const branchSlug = searchParams.get("branchSlug");
 
   const db = createAdminClient();
 
   let branchId: number | null = null;
 
-  // POS key — branch is always the one tied to their API key
-  if (posUser) {
+  if (posUserEmail) {
+    const { data: posUserData } = await db
+      .from("pos_users")
+      .select("branch_id, is_active")
+      .eq("email", posUserEmail)
+      .single();
+    const posUser = posUserData as Pick<
+      PosUser,
+      "branch_id" | "is_active"
+    > | null;
+
+    if (!posUser) {
+      return NextResponse.json(
+        { message: `POS user "${posUserEmail}" not found` },
+        { status: 404 },
+      );
+    }
+    if (!posUser.is_active) {
+      return NextResponse.json(
+        { message: `POS user "${posUserEmail}" is inactive` },
+        { status: 403 },
+      );
+    }
     branchId = posUser.branch_id;
   } else if (branchSlug) {
     const { data: branchData } = await db
@@ -78,13 +92,8 @@ export async function GET(req: NextRequest) {
   });
 }
 
-// POST /api/admin/tellers — create a new teller (admin only)
+// POST /api/admin/tellers — create a new teller
 export async function POST(req: NextRequest) {
-  const isAdmin = await requireAdmin();
-  if (!isAdmin) {
-    return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
-  }
-
   let body: { email: string; name: string; branchId: number };
   try {
     body = (await req.json()) as {

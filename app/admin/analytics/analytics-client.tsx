@@ -40,6 +40,7 @@ import {
 import {
   buildRangeSeries,
   getRangeCutoff,
+  getRangeLabel,
   getRangeTickStep,
   sparseTickLabel,
   type RangeKey,
@@ -85,14 +86,6 @@ function formatMoney(value: number) {
     currency: "GHS",
     minimumFractionDigits: 2,
   }).format(value);
-}
-
-function isSameDay(a: Date, b: Date) {
-  return (
-    a.getFullYear() === b.getFullYear() &&
-    a.getMonth() === b.getMonth() &&
-    a.getDate() === b.getDate()
-  );
 }
 
 export default function AnalyticsClient({
@@ -157,11 +150,14 @@ export default function AnalyticsClient({
     0,
   );
 
-  const totalOrders = activeOrders.length;
-  const totalRevenueGhs = activeOrders.reduce((acc, o) => acc + o.totalGhs, 0);
+  const totalOrders = rangeActiveOrders.length;
+  const totalRevenueGhs = rangeActiveOrders.reduce(
+    (acc, o) => acc + o.totalGhs,
+    0,
+  );
   const avgOrderValue = totalOrders > 0 ? totalRevenueGhs / totalOrders : 0;
-  const ordersToday = activeOrders.filter((o) =>
-    isSameDay(new Date(o.createdAt), now),
+  const completedInRange = rangeActiveOrders.filter(
+    (o) => o.status === "completed",
   ).length;
 
   // ── Range time series ───────────────────────────────────────────────────
@@ -263,7 +259,7 @@ export default function AnalyticsClient({
           <p className="mt-2 text-3xl font-bold text-foreground">
             {totalOrders}
           </p>
-          <p className="mt-1 text-xs text-muted-foreground">All time</p>
+          <p className="mt-1 text-xs text-muted-foreground">{getRangeLabel(range)}</p>
         </div>
         <div className="rounded-lg border bg-card p-6">
           <p className="text-sm font-medium text-muted-foreground">
@@ -272,7 +268,7 @@ export default function AnalyticsClient({
           <p className="mt-2 text-3xl font-bold text-foreground">
             {formatMoney(totalRevenueGhs)}
           </p>
-          <p className="mt-1 text-xs text-muted-foreground">All time</p>
+          <p className="mt-1 text-xs text-muted-foreground">{getRangeLabel(range)}</p>
         </div>
         <div className="rounded-lg border bg-card p-6">
           <p className="text-sm font-medium text-muted-foreground">
@@ -285,17 +281,12 @@ export default function AnalyticsClient({
         </div>
         <div className="rounded-lg border bg-card p-6">
           <p className="text-sm font-medium text-muted-foreground">
-            Orders Today
+            Completed Orders
           </p>
           <p className="mt-2 text-3xl font-bold text-foreground">
-            {ordersToday}
+            {completedInRange}
           </p>
-          <p className="mt-1 text-xs text-muted-foreground">
-            {new Date().toLocaleDateString("en-GH", {
-              month: "short",
-              day: "numeric",
-            })}
-          </p>
+          <p className="mt-1 text-xs text-muted-foreground">{getRangeLabel(range)}</p>
         </div>
         <div className="rounded-lg border bg-card p-6">
           <p className="text-sm font-medium text-muted-foreground">Cups Used</p>
