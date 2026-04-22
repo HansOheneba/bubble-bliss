@@ -778,7 +778,8 @@ export default function AnalyticsClient({
               Customer insights
             </p>
             <p className="text-sm text-muted-foreground mt-0.5">
-              Based on phone number. Returning customers have placed more than one order.
+              Based on phone number. Returning customers have placed more than
+              one order.
             </p>
           </div>
 
@@ -810,10 +811,17 @@ export default function AnalyticsClient({
                 Top spender
               </p>
               <p className="mt-2 text-xl font-bold text-foreground truncate">
-                {[...customerStats].sort((a, b) => b.totalSpendGhs - a.totalSpendGhs)[0]?.name ?? "—"}
+                {[...customerStats].sort(
+                  (a, b) => b.totalSpendGhs - a.totalSpendGhs,
+                )[0]?.name ?? "—"}
               </p>
               <p className="mt-1 text-xs text-muted-foreground">
-                {formatMoney([...customerStats].sort((a, b) => b.totalSpendGhs - a.totalSpendGhs)[0]?.totalSpendGhs ?? 0)} total
+                {formatMoney(
+                  [...customerStats].sort(
+                    (a, b) => b.totalSpendGhs - a.totalSpendGhs,
+                  )[0]?.totalSpendGhs ?? 0,
+                )}{" "}
+                total
               </p>
             </div>
             <div className="rounded-lg border bg-card p-5">

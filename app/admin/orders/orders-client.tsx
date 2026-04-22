@@ -155,7 +155,9 @@ export default function OrdersClient({ initialOrders }: Props) {
   const [selectedPayment, setSelectedPayment] = React.useState<string[]>([]);
   const [selectedSource, setSelectedSource] = React.useState<string[]>([]);
   const [sortMode, setSortMode] = React.useState<"queue" | "latest">("queue");
-  const [dateRange, setDateRange] = React.useState<"all" | "today" | "yesterday" | "7d">("all");
+  const [dateRange, setDateRange] = React.useState<
+    "all" | "today" | "yesterday" | "7d"
+  >("all");
   const [open, setOpen] = React.useState(false);
   const [activeOrderId, setActiveOrderId] = React.useState<number | null>(null);
   const [updatingId, setUpdatingId] = React.useState<number | null>(null);
