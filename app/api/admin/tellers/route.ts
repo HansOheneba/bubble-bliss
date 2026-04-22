@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
+import { currentUser } from "@clerk/nextjs/server";
 import { createAdminClient } from "@/lib/supabase";
+import { logAdminActionWithEmail } from "@/lib/admin-logger";
 import type { Teller, Branch, PosUser } from "@/lib/database.types";
 
 type TellerRow = Teller & { branch: Branch | null };
@@ -156,6 +158,21 @@ export async function POST(req: NextRequest) {
   }
 
   const teller = inserted as Teller;
+  const adminUser = await currentUser();
+  const adminEmail =
+    adminUser?.emailAddresses
+      .find((e) => e.id === adminUser.primaryEmailAddressId)
+      ?.emailAddress?.toLowerCase() ?? "unknown";
+  void logAdminActionWithEmail(adminEmail, {
+    action: "teller.create",
+    description: `Created teller "${teller.name}" (${teller.email})`,
+    metadata: {
+      id: teller.id,
+      name: teller.name,
+      email: teller.email,
+      branchId: teller.branch_id,
+    },
+  });
 
   return NextResponse.json(
     {

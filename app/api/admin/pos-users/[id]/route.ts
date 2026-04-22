@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
+import { currentUser } from "@clerk/nextjs/server";
 import { createAdminClient } from "@/lib/supabase";
+import { logAdminActionWithEmail } from "@/lib/admin-logger";
 import type { PosUser } from "@/lib/database.types";
 
 // PATCH /api/admin/pos-users/[id] — update name, email, branchId, isActive
@@ -51,7 +53,7 @@ export async function PATCH(
 
   const { data: existing } = await db
     .from("pos_users")
-    .select("id")
+    .select("id, name, email, branch_id")
     .eq("id", posUserId)
     .single();
 
@@ -83,7 +85,61 @@ export async function PATCH(
     );
   }
 
-  return NextResponse.json({ posUser: updatedData as PosUser });
+  const posUser = updatedData as PosUser;
+  const adminUser = await currentUser();
+  const adminEmail =
+    adminUser?.emailAddresses
+      .find((e) => e.id === adminUser.primaryEmailAddressId)
+      ?.emailAddress?.toLowerCase() ?? "unknown";
+  if (body.isActive !== undefined) {
+    void logAdminActionWithEmail(adminEmail, {
+      action: body.isActive ? "pos_user.reactivate" : "pos_user.deactivate",
+      description: `${body.isActive ? "Reactivated" : "Deactivated"} POS user "${posUser.name}"`,
+      metadata: { id: posUser.id, name: posUser.name },
+    });
+  } else {
+    const oldPosUser = existing as {
+      name: string;
+      email: string;
+      branch_id: number;
+    } | null;
+    const posUserChanges: string[] = [];
+    if (
+      body.name !== undefined &&
+      oldPosUser?.name &&
+      oldPosUser.name !== body.name
+    )
+      posUserChanges.push(
+        `name changed from "${oldPosUser.name}" to "${body.name}"`,
+      );
+    if (
+      body.email !== undefined &&
+      oldPosUser?.email &&
+      oldPosUser.email !== body.email
+    )
+      posUserChanges.push(
+        `email changed from "${oldPosUser.email}" to "${body.email}"`,
+      );
+    if (body.branchId !== undefined && oldPosUser?.branch_id !== body.branchId)
+      posUserChanges.push(`branch reassigned`);
+    const posUserDesc =
+      posUserChanges.length > 0
+        ? `Updated POS user "${posUser.name}": ${posUserChanges.join("; ")}`
+        : `Updated POS user "${posUser.name}"`;
+    void logAdminActionWithEmail(adminEmail, {
+      action: "pos_user.update",
+      description: posUserDesc,
+      metadata: {
+        id: posUser.id,
+        name: posUser.name,
+        email: posUser.email,
+        branchId: posUser.branch_id,
+        changes: posUserChanges,
+      },
+    });
+  }
+
+  return NextResponse.json({ posUser: posUser });
 }
 
 // DELETE /api/admin/pos-users/[id] — permanently delete a POS user
@@ -103,6 +159,12 @@ export async function DELETE(
 
   const db = createAdminClient();
 
+  const { data: posUserRow } = await db
+    .from("pos_users")
+    .select("name, email")
+    .eq("id", posUserId)
+    .single();
+
   const { error } = await db.from("pos_users").delete().eq("id", posUserId);
 
   if (error) {
@@ -112,6 +174,17 @@ export async function DELETE(
       { status: 500 },
     );
   }
+
+  const adminUser = await currentUser();
+  const adminEmail =
+    adminUser?.emailAddresses
+      .find((e) => e.id === adminUser.primaryEmailAddressId)
+      ?.emailAddress?.toLowerCase() ?? "unknown";
+  void logAdminActionWithEmail(adminEmail, {
+    action: "pos_user.delete",
+    description: `Deleted POS user "${(posUserRow as { name: string } | null)?.name ?? posUserId}"`,
+    metadata: { id: posUserId },
+  });
 
   return new NextResponse(null, { status: 204 });
 }

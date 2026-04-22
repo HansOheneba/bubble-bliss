@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
+import { currentUser } from "@clerk/nextjs/server";
 import { createAdminClient } from "@/lib/supabase";
+import { logAdminActionWithEmail } from "@/lib/admin-logger";
 import type { PosUser, Branch } from "@/lib/database.types";
 
 type PosUserRow = PosUser & { branch: Branch | null };
@@ -92,5 +94,22 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  return NextResponse.json({ posUser: data as PosUser }, { status: 201 });
+  const createdUser = data as PosUser;
+  const adminUser = await currentUser();
+  const adminEmail =
+    adminUser?.emailAddresses
+      .find((e) => e.id === adminUser.primaryEmailAddressId)
+      ?.emailAddress?.toLowerCase() ?? "unknown";
+  void logAdminActionWithEmail(adminEmail, {
+    action: "pos_user.create",
+    description: `Created POS user "${createdUser.name}" (${createdUser.email})`,
+    metadata: {
+      id: createdUser.id,
+      name: createdUser.name,
+      email: createdUser.email,
+      branchId: createdUser.branch_id,
+    },
+  });
+
+  return NextResponse.json({ posUser: createdUser }, { status: 201 });
 }

@@ -42,13 +42,14 @@ import {
   Upload,
   Loader2,
 } from "lucide-react";
-import { supabase } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
 import {
   createProduct,
   updateProduct,
   deleteProduct,
   uploadImage,
+  toggleProductActive,
+  toggleProductStock,
 } from "@/lib/actions";
 import type {
   ProductWithVariants,
@@ -819,11 +820,8 @@ export default function ProductsClient({
   async function toggleActive(product: ProductWithVariants) {
     const next = !product.is_active;
     setUpdating((prev) => ({ ...prev, [product.id]: true }));
-    const { error } = await supabase
-      .from("products")
-      .update({ is_active: next } as never)
-      .eq("id", product.id);
-    if (!error) {
+    const result = await toggleProductActive(product.id, next, product.name);
+    if (!result.error) {
       setProducts((prev) =>
         prev.map((p) => (p.id === product.id ? { ...p, is_active: next } : p)),
       );
@@ -834,11 +832,8 @@ export default function ProductsClient({
   async function toggleStock(product: ProductWithVariants) {
     const next = !product.in_stock;
     setUpdating((prev) => ({ ...prev, [product.id]: true }));
-    const { error } = await supabase
-      .from("products")
-      .update({ in_stock: next } as never)
-      .eq("id", product.id);
-    if (!error) {
+    const result = await toggleProductStock(product.id, next, product.name);
+    if (!result.error) {
       setProducts((prev) =>
         prev.map((p) => (p.id === product.id ? { ...p, in_stock: next } : p)),
       );

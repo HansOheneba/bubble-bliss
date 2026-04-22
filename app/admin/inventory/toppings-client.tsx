@@ -24,9 +24,14 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Search, Plus, Pencil, Trash2 } from "lucide-react";
-import { supabase } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
-import { createTopping, updateTopping, deleteTopping } from "@/lib/actions";
+import {
+  createTopping,
+  updateTopping,
+  deleteTopping,
+  toggleToppingActive,
+  toggleToppingStock,
+} from "@/lib/actions";
 import type {
   ToppingWithBranchAvailability,
   Branch,
@@ -377,11 +382,8 @@ export default function ToppingsClient({ initialToppings, branches }: Props) {
   async function toggleActive(topping: ToppingWithBranchAvailability) {
     const next = !topping.is_active;
     setUpdating((prev) => ({ ...prev, [topping.id]: true }));
-    const { error } = await supabase
-      .from("toppings")
-      .update({ is_active: next } as never)
-      .eq("id", topping.id);
-    if (!error) {
+    const result = await toggleToppingActive(topping.id, next, topping.name);
+    if (!result.error) {
       setToppings((prev) =>
         prev.map((t) => (t.id === topping.id ? { ...t, is_active: next } : t)),
       );
@@ -392,11 +394,8 @@ export default function ToppingsClient({ initialToppings, branches }: Props) {
   async function toggleStock(topping: ToppingWithBranchAvailability) {
     const next = !topping.in_stock;
     setUpdating((prev) => ({ ...prev, [topping.id]: true }));
-    const { error } = await supabase
-      .from("toppings")
-      .update({ in_stock: next } as never)
-      .eq("id", topping.id);
-    if (!error) {
+    const result = await toggleToppingStock(topping.id, next, topping.name);
+    if (!result.error) {
       setToppings((prev) =>
         prev.map((t) => (t.id === topping.id ? { ...t, in_stock: next } : t)),
       );

@@ -26,6 +26,7 @@ import {
   LifeBuoy,
   LogOut,
   Monitor,
+  ScrollText,
 } from "lucide-react";
 
 const nav = [
@@ -37,6 +38,7 @@ const nav = [
   { label: "Categories", href: "/admin/categories", icon: Tag },
   { label: "Tellers", href: "/admin/tellers", icon: Users },
   { label: "POS Users", href: "/admin/pos-users", icon: Monitor },
+  { label: "Logs", href: "/admin/logs", icon: ScrollText },
 ];
 
 export default function AdminSidebar() {
