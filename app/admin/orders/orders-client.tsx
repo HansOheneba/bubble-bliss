@@ -166,7 +166,8 @@ export default function OrdersClient({ initialOrders }: Props) {
   const [orders, setOrders] = React.useState<OrderWithItems[]>(initialOrders);
   const [query, setQuery] = React.useState(searchParams.get("q") ?? "");
   const [selectedStatuses, setSelectedStatuses] = React.useState<OrderStatus[]>(
-    (searchParams.get("statuses")?.split(",").filter(Boolean) ?? []) as OrderStatus[],
+    (searchParams.get("statuses")?.split(",").filter(Boolean) ??
+      []) as OrderStatus[],
   );
   const [selectedBranches, setSelectedBranches] = React.useState<string[]>(
     searchParams.get("branches")?.split(",").filter(Boolean) ?? [],
@@ -348,13 +349,19 @@ export default function OrdersClient({ initialOrders }: Props) {
               <DropdownMenuSeparator />
               <DropdownMenuCheckboxItem
                 checked={sortMode === "queue"}
-                onCheckedChange={() => { setSortMode("queue"); syncToUrl({ sort: null }); }}
+                onCheckedChange={() => {
+                  setSortMode("queue");
+                  syncToUrl({ sort: null });
+                }}
               >
                 First come first serve
               </DropdownMenuCheckboxItem>
               <DropdownMenuCheckboxItem
                 checked={sortMode === "latest"}
-                onCheckedChange={() => { setSortMode("latest"); syncToUrl({ sort: "latest" }); }}
+                onCheckedChange={() => {
+                  setSortMode("latest");
+                  syncToUrl({ sort: "latest" });
+                }}
               >
                 Latest first
               </DropdownMenuCheckboxItem>
@@ -392,7 +399,10 @@ export default function OrdersClient({ initialOrders }: Props) {
                 <DropdownMenuCheckboxItem
                   key={val}
                   checked={dateRange === val}
-                  onCheckedChange={() => { setDateRange(val); syncToUrl({ date: val === "all" ? null : val }); }}
+                  onCheckedChange={() => {
+                    setDateRange(val);
+                    syncToUrl({ date: val === "all" ? null : val });
+                  }}
                 >
                   {label}
                 </DropdownMenuCheckboxItem>
@@ -550,7 +560,14 @@ export default function OrdersClient({ initialOrders }: Props) {
                 setSelectedSource([]);
                 setDateRange("all");
                 setSortMode("queue");
-                syncToUrl({ statuses: null, branches: null, payment: null, source: null, date: null, sort: null });
+                syncToUrl({
+                  statuses: null,
+                  branches: null,
+                  payment: null,
+                  source: null,
+                  date: null,
+                  sort: null,
+                });
               }}
             >
               <X className="h-4 w-4" />
