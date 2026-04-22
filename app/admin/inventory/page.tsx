@@ -10,7 +10,7 @@ async function fetchPageData() {
   const [toppingsResult, branchesResult] = await Promise.all([
     supabase
       .from("toppings")
-      .select(`*, branch_availability:topping_branch_availability(branch_id, price_in_pesewas)`)
+      .select(`*, branch_availability:topping_branch_availability(branch_id)`)
       .order("sort_order", { ascending: true }),
     supabase.from("branches").select("*").order("name", { ascending: true }),
   ]);

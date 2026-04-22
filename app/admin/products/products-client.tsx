@@ -86,7 +86,9 @@ type FormValues = {
   is_active: boolean;
   in_stock: boolean;
   restrict_branches: boolean;
-  branch_entries: { branch_id: number; price_ghs: string }[];
+  restricted_branch_ids: number[];
+  // branch_id (as string key) → price in GHS
+  branch_prices: Record<string, string>;
 };
 
 // ── Utilities ─────────────────────────────────────────────────────────────────
@@ -122,7 +124,8 @@ function defaultForm(): FormValues {
     is_active: true,
     in_stock: true,
     restrict_branches: false,
-    branch_entries: [],
+    restricted_branch_ids: [],
+    branch_prices: {},
   };
 }
 
@@ -152,10 +155,16 @@ function productToForm(product: ProductWithVariants): FormValues {
     is_active: product.is_active ?? true,
     in_stock: product.in_stock ?? true,
     restrict_branches: (product.branch_availability?.length ?? 0) > 0,
-    branch_entries: product.branch_availability?.map((ba) => ({
-      branch_id: ba.branch_id,
-      price_ghs: ba.price_in_pesewas != null ? String(ba.price_in_pesewas / 100) : "",
-    })) ?? [],
+    restricted_branch_ids:
+      product.branch_availability?.map((ba) => ba.branch_id) ?? [],
+    branch_prices: (() => {
+      const bp = (product.branch_prices ?? {}) as Record<string, number>;
+      const result: Record<string, string> = {};
+      for (const [k, v] of Object.entries(bp)) {
+        result[k] = String(v / 100);
+      }
+      return result;
+    })(),
   };
 }
 
@@ -174,6 +183,13 @@ function formToPayload(values: FormValues): {
         !values.has_variants && values.base_price_ghs
           ? Math.round(parseFloat(values.base_price_ghs) * 100)
           : null,
+      branch_prices: (() => {
+        const result: Record<string, number> = {};
+        for (const [k, v] of Object.entries(values.branch_prices)) {
+          if (v) result[k] = Math.round(parseFloat(v) * 100);
+        }
+        return result;
+      })(),
       sort_order: Number(values.sort_order) || 0,
       image: values.image.trim() || null,
       is_active: values.is_active,
@@ -188,12 +204,7 @@ function formToPayload(values: FormValues): {
         }))
       : [],
     branchEntries: values.restrict_branches
-      ? values.branch_entries.map((e) => ({
-          branch_id: e.branch_id,
-          price_in_pesewas: e.price_ghs
-            ? Math.round(parseFloat(e.price_ghs) * 100)
-            : null,
-        }))
+      ? values.restricted_branch_ids.map((bid) => ({ branch_id: bid }))
       : [],
   };
 }
@@ -336,12 +347,21 @@ function ProductFormSheet({
     );
   }
 
-  function toggleBranch(branchId: number) {
-    const exists = form.branch_entries.some((e) => e.branch_id === branchId);
-    const entries = exists
-      ? form.branch_entries.filter((e) => e.branch_id !== branchId)
-      : [...form.branch_entries, { branch_id: branchId, price_ghs: "" }];
-    setField("branch_entries", entries);
+  function toggleRestrictedBranch(branchId: number) {
+    const exists = form.restricted_branch_ids.includes(branchId);
+    setField(
+      "restricted_branch_ids",
+      exists
+        ? form.restricted_branch_ids.filter((id) => id !== branchId)
+        : [...form.restricted_branch_ids, branchId],
+    );
+  }
+
+  function setBranchPrice(branchId: number, price_ghs: string) {
+    setField("branch_prices", {
+      ...form.branch_prices,
+      [String(branchId)]: price_ghs,
+    });
   }
 
   function validate(): string | null {
@@ -651,10 +671,48 @@ function ProductFormSheet({
             )}
           </div>
 
+          {/* Branch Pricing */}
+          {branches.length > 0 && (
+            <div className="space-y-3 rounded-lg border p-4">
+              <div>
+                <span className="text-sm font-medium">Branch Pricing</span>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Set a price override per branch. Leave blank to use the
+                  default product price.
+                </p>
+              </div>
+              <div className="space-y-3">
+                {branches.map((branch) => (
+                  <div key={branch.id} className="space-y-1">
+                    <Label className="text-xs text-muted-foreground">
+                      {branch.name} (GHS)
+                    </Label>
+                    <Input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={form.branch_prices[String(branch.id)] ?? ""}
+                      onChange={(e) =>
+                        setBranchPrice(branch.id, e.target.value)
+                      }
+                      placeholder="Leave blank to use default price"
+                      className="h-8 text-xs"
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Branch Availability */}
           {branches.length > 0 && (
             <div className="space-y-3 rounded-lg border p-4">
-              <span className="text-sm font-medium">Branch Availability</span>
+              <div>
+                <span className="text-sm font-medium">Branch Availability</span>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Restrict which branches can sell this product.
+                </p>
+              </div>
               <div className="space-y-2 text-sm">
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input
@@ -663,7 +721,7 @@ function ProductFormSheet({
                     checked={!form.restrict_branches}
                     onChange={() => {
                       setField("restrict_branches", false);
-                      setField("branch_ids", []);
+                      setField("restricted_branch_ids", []);
                     }}
                     className="h-4 w-4"
                   />
@@ -681,46 +739,21 @@ function ProductFormSheet({
                 </label>
               </div>
               {form.restrict_branches && (
-                <div className="space-y-2 pl-6">
-                  {branches.map((branch) => {
-                    const entry = form.branch_entries.find(
-                      (e) => e.branch_id === branch.id,
-                    );
-                    const isChecked = !!entry;
-                    return (
-                      <div key={branch.id} className="space-y-1">
-                        <label className="flex items-center gap-2 text-sm cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={isChecked}
-                            onChange={() => toggleBranch(branch.id)}
-                            className="h-4 w-4 rounded border-border"
-                          />
-                          {branch.name}
-                        </label>
-                        {isChecked && entry && (
-                          <div className="pl-6">
-                            <Input
-                              type="number"
-                              step="0.01"
-                              min="0"
-                              value={entry.price_ghs}
-                              onChange={(e) => {
-                                const updated = form.branch_entries.map((en) =>
-                                  en.branch_id === branch.id
-                                    ? { ...en, price_ghs: e.target.value }
-                                    : en,
-                                );
-                                setField("branch_entries", updated);
-                              }}
-                              placeholder="Price override (GHS) — leave blank for default"
-                              className="h-7 text-xs"
-                            />
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
+                <div className="space-y-1.5 pl-6">
+                  {branches.map((branch) => (
+                    <label
+                      key={branch.id}
+                      className="flex items-center gap-2 text-sm cursor-pointer"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={form.restricted_branch_ids.includes(branch.id)}
+                        onChange={() => toggleRestrictedBranch(branch.id)}
+                        className="h-4 w-4 rounded border-border"
+                      />
+                      {branch.name}
+                    </label>
+                  ))}
                 </div>
               )}
             </div>
@@ -983,11 +1016,9 @@ export default function ProductsClient({
                     {branches.length > 0 && (
                       <div className="flex flex-wrap gap-1">
                         <BranchChips
-                          branchIds={
-                            product.branch_availability?.map(
-                              (ba) => ba.branch_id,
-                            ) ?? []
-                          }
+                          branchIds={(product.branch_availability ?? []).map(
+                            (ba) => ba.branch_id,
+                          )}
                           branches={branches}
                         />
                       </div>

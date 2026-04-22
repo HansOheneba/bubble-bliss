@@ -3,17 +3,18 @@ import { createAdminClient } from "@/lib/supabase";
 import type { Topping } from "@/lib/database.types";
 
 type ToppingRow = Topping & {
-  branch_availability: { branch_id: number; price_in_pesewas: number | null }[];
+  branch_availability: { branch_id: number }[];
 };
 
 /**
  * GET /api/menu/toppings
  *
- * Returns all active, in-stock toppings with branch availability.
+ * Returns active, in-stock toppings filtered and priced per branch.
  *
- * Optional query params:
- *   ?branchSlug=osu          — filter to toppings available at a specific branch
- *   ?pos_user_email=x@y.com  — resolve branch from POS user email (alternative to branchSlug)
+ * Required (POS) query param:
+ *   ?pos_user_email=x@y.com  — resolves branch from POS user (primary)
+ * Optional fallback:
+ *   ?branchSlug=osu          — filter by branch slug
  */
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
@@ -70,7 +71,7 @@ export async function GET(req: NextRequest) {
     .select(
       `
       *,
-      branch_availability:topping_branch_availability(branch_id, price_in_pesewas)
+      branch_availability:topping_branch_availability(branch_id)
       `,
     )
     .eq("is_active", true)
@@ -96,20 +97,13 @@ export async function GET(req: NextRequest) {
       })
     : toppings;
 
-  const shaped = filtered.map((t) => {
-    const branchAvail =
-      branchId !== null
-        ? t.branch_availability.find((a) => a.branch_id === branchId)
-        : undefined;
-    const effectivePrice = branchAvail?.price_in_pesewas ?? t.price_in_pesewas;
-    return {
-      id: t.id,
-      name: t.name,
-      price_in_pesewas: effectivePrice,
-      sort_order: t.sort_order,
-      available_branch_ids: t.branch_availability.map((a) => a.branch_id),
-    };
-  });
+  const shaped = filtered.map((t) => ({
+    id: t.id,
+    name: t.name,
+    price_in_pesewas: t.price_in_pesewas,
+    sort_order: t.sort_order,
+    available_branch_ids: t.branch_availability.map((a) => a.branch_id),
+  }));
 
   return NextResponse.json({ toppings: shaped });
 }

@@ -60,6 +60,7 @@ export type Database = {
           in_stock: boolean | null;
           sort_order: number | null;
           image: string | null;
+          branch_prices: Json;
         };
         Insert: {
           slug: string;
@@ -71,6 +72,7 @@ export type Database = {
           in_stock?: boolean | null;
           sort_order?: number | null;
           image?: string | null;
+          branch_prices?: Json;
         };
         Update: {
           slug?: string;
@@ -82,6 +84,7 @@ export type Database = {
           in_stock?: boolean | null;
           sort_order?: number | null;
           image?: string | null;
+          branch_prices?: Json;
         };
       };
       product_variants: {
@@ -257,34 +260,28 @@ export type Database = {
         Row: {
           product_id: number;
           branch_id: number;
-          price_in_pesewas: number | null;
         };
         Insert: {
           product_id: number;
           branch_id: number;
-          price_in_pesewas?: number | null;
         };
         Update: {
           product_id?: number;
           branch_id?: number;
-          price_in_pesewas?: number | null;
         };
       };
       topping_branch_availability: {
         Row: {
           topping_id: number;
           branch_id: number;
-          price_in_pesewas: number | null;
         };
         Insert: {
           topping_id: number;
           branch_id: number;
-          price_in_pesewas?: number | null;
         };
         Update: {
           topping_id?: number;
           branch_id?: number;
-          price_in_pesewas?: number | null;
         };
       };
       tellers: {
@@ -362,11 +359,11 @@ export type OrderWithItems = Order & {
 export type ProductWithVariants = Product & {
   variants: ProductVariant[];
   category: Category | null;
-  branch_availability: { branch_id: number; price_in_pesewas: number | null }[];
+  branch_availability: { branch_id: number }[];
 };
 
 export type ToppingWithBranchAvailability = Topping & {
-  branch_availability: { branch_id: number; price_in_pesewas: number | null }[];
+  branch_availability: { branch_id: number }[];
 };
 
 export type CategoryWithCount = Category & {

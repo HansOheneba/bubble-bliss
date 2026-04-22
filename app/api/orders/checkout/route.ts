@@ -256,7 +256,7 @@ export async function POST(req: NextRequest) {
       .from("product_branch_availability")
       .select("branch_id")
       .eq("product_id", productId);
-    // No rows = available at all branches; rows present = restricted
+    // No rows = available at all branches; rows present = restricted to those branches
     if (prodAvail && prodAvail.length > 0) {
       const availableBranchIds = (prodAvail as { branch_id: number }[]).map(
         (r) => r.branch_id,
@@ -270,6 +270,14 @@ export async function POST(req: NextRequest) {
         );
       }
     }
+
+    // Resolve branch-specific price from branch_prices JSONB, fall back to product default
+    const rawBp = product.branch_prices ?? {};
+    const branchPrices: Record<string, number> =
+      typeof rawBp === "string"
+        ? JSON.parse(rawBp)
+        : (rawBp as Record<string, number>);
+    const branchSpecificPrice = branchPrices[String(branchId)] ?? null;
 
     // Resolve variant + unit price
     let variantId: number | null = null;
@@ -297,6 +305,9 @@ export async function POST(req: NextRequest) {
       variantId = variant.id;
       variantLabel = variant.label;
       unitPesewas = variant.price_in_pesewas;
+    } else if (branchSpecificPrice !== null) {
+      // Branch has an explicit price override for this product
+      unitPesewas = branchSpecificPrice;
     } else if (product.price_in_pesewas !== null) {
       unitPesewas = product.price_in_pesewas;
     } else {

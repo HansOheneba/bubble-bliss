@@ -47,6 +47,7 @@ export type ProductInput = {
   description: string | null;
   category_id: number | null;
   price_in_pesewas: number | null;
+  branch_prices: Record<string, number>;
   sort_order: number;
   image: string | null;
   is_active: boolean;
@@ -62,12 +63,6 @@ export type VariantInput = {
 
 export type BranchEntry = {
   branch_id: number;
-  price_in_pesewas: number | null;
-};
-
-export type ToppingBranchEntry = {
-  branch_id: number;
-  price_in_pesewas: number | null;
 };
 
 export type ToppingInput = {
@@ -104,14 +99,12 @@ export async function createProduct(
     if (error || !data) throw new Error(error?.message ?? "Insert failed");
 
     if (variants.length > 0) {
-      const { error: varErr } = await supabase
-        .from("product_variants")
-        .insert(
-          variants.map((v) => ({
-            ...v,
-            product_id: (data as { id: number }).id,
-          })) as never,
-        );
+      const { error: varErr } = await supabase.from("product_variants").insert(
+        variants.map((v) => ({
+          ...v,
+          product_id: (data as { id: number }).id,
+        })) as never,
+      );
       if (varErr) throw new Error(varErr.message);
     }
 
@@ -120,7 +113,6 @@ export async function createProduct(
         branchEntries.map((e) => ({
           product_id: (data as { id: number }).id,
           branch_id: e.branch_id,
-          price_in_pesewas: e.price_in_pesewas,
         })) as never,
       );
     }
@@ -162,15 +154,12 @@ export async function updateProduct(
       .delete()
       .eq("product_id", id);
     if (branchEntries.length > 0) {
-      await supabase
-        .from("product_branch_availability")
-        .insert(
-          branchEntries.map((e) => ({
-            product_id: id,
-            branch_id: e.branch_id,
-            price_in_pesewas: e.price_in_pesewas,
-          })) as never,
-        );
+      await supabase.from("product_branch_availability").insert(
+        branchEntries.map((e) => ({
+          product_id: id,
+          branch_id: e.branch_id,
+        })) as never,
+      );
     }
 
     revalidatePath("/admin/products");
@@ -201,7 +190,7 @@ export async function deleteProduct(id: number): Promise<ActionResult> {
 
 export async function createTopping(
   topping: ToppingInput,
-  branchEntries: ToppingBranchEntry[],
+  branchIds: number[],
 ): Promise<CreateResult> {
   try {
     const supabase = createAdminClient();
@@ -212,12 +201,11 @@ export async function createTopping(
       .single();
     if (error || !data) throw new Error(error?.message ?? "Insert failed");
 
-    if (branchEntries.length > 0) {
+    if (branchIds.length > 0) {
       await supabase.from("topping_branch_availability").insert(
-        branchEntries.map((e) => ({
+        branchIds.map((bid) => ({
           topping_id: (data as { id: number }).id,
-          branch_id: e.branch_id,
-          price_in_pesewas: e.price_in_pesewas,
+          branch_id: bid,
         })) as never,
       );
     }
@@ -232,7 +220,7 @@ export async function createTopping(
 export async function updateTopping(
   id: number,
   topping: ToppingInput,
-  branchEntries: ToppingBranchEntry[],
+  branchIds: number[],
 ): Promise<ActionResult> {
   try {
     const supabase = createAdminClient();
@@ -246,15 +234,11 @@ export async function updateTopping(
       .from("topping_branch_availability")
       .delete()
       .eq("topping_id", id);
-    if (branchEntries.length > 0) {
+    if (branchIds.length > 0) {
       await supabase
         .from("topping_branch_availability")
         .insert(
-          branchEntries.map((e) => ({
-            topping_id: id,
-            branch_id: e.branch_id,
-            price_in_pesewas: e.price_in_pesewas,
-          })) as never,
+          branchIds.map((bid) => ({ topping_id: id, branch_id: bid })) as never,
         );
     }
 

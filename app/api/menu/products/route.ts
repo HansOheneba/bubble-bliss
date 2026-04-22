@@ -5,26 +5,20 @@ import type { Product, ProductVariant, Category } from "@/lib/database.types";
 type ProductRow = Product & {
   category: Category | null;
   variants: ProductVariant[];
-  branch_availability: { branch_id: number; price_in_pesewas: number | null }[];
+  branch_availability: { branch_id: number }[];
 };
 
 /**
- * GET /api/menu/products
- *
- * Returns all active products with their variants, category, and branch
- * availability. Inactive products are excluded.
- *
- * Optional query params:
- *   ?branchSlug=osu          — filter to products available at a specific branch
- *   ?pos_user_email=x@y.com  — resolve branch from POS user email (alternative to branchSlug)
- *   ?categorySlug=tea        — filter to a specific category
+ * Shared handler for GET and POST.
+ * GET  /api/menu/products?pos_user_email=x&branchSlug=y&categorySlug=z
+ * POST /api/menu/products  { "pos_user_email": "x", "branchSlug": "y", "categorySlug": "z" }
  */
-export async function GET(req: NextRequest) {
-  const { searchParams } = new URL(req.url);
-  const branchSlug = searchParams.get("branchSlug");
-  const posUserEmail = searchParams.get("pos_user_email");
-  const categorySlug = searchParams.get("categorySlug");
-
+async function handleRequest(params: {
+  posUserEmail: string | null;
+  branchSlug: string | null;
+  categorySlug: string | null;
+}): Promise<NextResponse> {
+  const { posUserEmail, branchSlug, categorySlug } = params;
   const db = createAdminClient();
 
   // Resolve branchId — from pos_user_email first, then branchSlug
@@ -54,6 +48,9 @@ export async function GET(req: NextRequest) {
       );
     }
     branchId = posUser.branch_id;
+    console.log(
+      `[menu/products] POS user: ${posUserEmail} → branch_id: ${branchId}`,
+    );
   } else if (branchSlug) {
     const { data: branch } = await db
       .from("branches")
@@ -69,6 +66,13 @@ export async function GET(req: NextRequest) {
       );
     }
     branchId = (branch as { id: number }).id;
+    console.log(
+      `[menu/products] branchSlug: "${branchSlug}" → branch_id: ${branchId}`,
+    );
+  } else {
+    console.log(
+      `[menu/products] No user/branch supplied — returning global menu`,
+    );
   }
 
   // Resolve categoryId from slug if provided
@@ -97,7 +101,7 @@ export async function GET(req: NextRequest) {
       *,
       category:categories(*),
       variants:product_variants(*),
-      branch_availability:product_branch_availability(branch_id, price_in_pesewas)
+      branch_availability:product_branch_availability(branch_id)
       `,
     )
     .eq("is_active", true)
@@ -121,10 +125,9 @@ export async function GET(req: NextRequest) {
 
   const filtered = branchId
     ? products.filter((p) => {
-        return (
-          p.branch_availability.length === 0 ||
-          p.branch_availability.some((a) => a.branch_id === branchId)
-        );
+        // No rows = available at all branches
+        if (p.branch_availability.length === 0) return true;
+        return p.branch_availability.some((a) => a.branch_id === branchId);
       })
     : products;
 
@@ -134,12 +137,16 @@ export async function GET(req: NextRequest) {
       (a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0),
     );
 
-    // Use branch-specific price if set, otherwise fall back to product default
-    const branchAvail =
+    // Use branch-specific price from branch_prices JSONB if set
+    const rawBp = p.branch_prices ?? {};
+    const branchPrices: Record<string, number> =
+      typeof rawBp === "string"
+        ? (JSON.parse(rawBp) as Record<string, number>)
+        : (rawBp as Record<string, number>);
+    const effectivePrice =
       branchId !== null
-        ? p.branch_availability.find((a) => a.branch_id === branchId)
-        : undefined;
-    const effectivePrice = branchAvail?.price_in_pesewas ?? p.price_in_pesewas;
+        ? (branchPrices[String(branchId)] ?? p.price_in_pesewas)
+        : p.price_in_pesewas;
 
     return {
       id: p.id,
@@ -157,5 +164,41 @@ export async function GET(req: NextRequest) {
     };
   });
 
+  console.log(
+    `[menu/products] Returning ${shaped.length} product(s) for branch_id: ${branchId ?? "all"}`,
+  );
   return NextResponse.json({ products: shaped });
+}
+
+/** GET — all params via query string */
+export async function GET(req: NextRequest) {
+  const { searchParams } = new URL(req.url);
+  return handleRequest({
+    posUserEmail: searchParams.get("pos_user_email"),
+    branchSlug: searchParams.get("branchSlug"),
+    categorySlug: searchParams.get("categorySlug"),
+  });
+}
+
+/** POST — params via JSON body (or query string, body takes precedence) */
+export async function POST(req: NextRequest) {
+  const { searchParams } = new URL(req.url);
+
+  let body: Record<string, unknown> = {};
+  try {
+    body = (await req.json()) as Record<string, unknown>;
+  } catch {
+    // No body or not JSON
+  }
+
+  const str = (key: string) => {
+    const v = body[key] ?? searchParams.get(key);
+    return typeof v === "string" ? v : null;
+  };
+
+  return handleRequest({
+    posUserEmail: str("pos_user_email"),
+    branchSlug: str("branchSlug"),
+    categorySlug: str("categorySlug"),
+  });
 }
