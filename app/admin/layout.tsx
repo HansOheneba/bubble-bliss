@@ -20,7 +20,7 @@ export default async function RootLayout({
     ?.emailAddress?.toLowerCase();
 
   if (!primaryEmail || !ALLOWED_EMAILS.includes(primaryEmail)) {
-    redirect("https://www.google.com");
+    redirect("/unauthorized");
   }
 
   return (

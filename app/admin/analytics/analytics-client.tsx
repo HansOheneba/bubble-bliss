@@ -45,6 +45,7 @@ import {
   sparseTickLabel,
   type RangeKey,
 } from "@/lib/range-metrics";
+import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import type {
   SlimOrder,
   BranchStat,
@@ -103,8 +104,28 @@ export default function AnalyticsClient({
   branchPaymentStats,
   branchSourceStats,
 }: Props) {
-  const [range, setRange] = React.useState<RangeKey>("7d");
-  const [selectedBranch, setSelectedBranch] = React.useState<string>("all");
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const pathname = usePathname();
+
+  function syncToUrl(updates: Record<string, string | null>) {
+    const params = new URLSearchParams(searchParams.toString());
+    for (const [key, value] of Object.entries(updates)) {
+      if (value === null || value === "") {
+        params.delete(key);
+      } else {
+        params.set(key, value);
+      }
+    }
+    router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+  }
+
+  const [range, setRange] = React.useState<RangeKey>(
+    (searchParams.get("range") as RangeKey) ?? "7d",
+  );
+  const [selectedBranch, setSelectedBranch] = React.useState<string>(
+    searchParams.get("branch") ?? "all",
+  );
   const now = new Date();
 
   // ── Derive active datasets based on selected branch ──────────────────────
@@ -229,7 +250,13 @@ export default function AnalyticsClient({
         </div>
         <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
           <span>Branch</span>
-          <Select value={selectedBranch} onValueChange={setSelectedBranch}>
+          <Select
+            value={selectedBranch}
+            onValueChange={(v) => {
+              setSelectedBranch(v);
+              syncToUrl({ branch: v === "all" ? null : v });
+            }}
+          >
             <SelectTrigger size="sm" className="min-w-40">
               <SelectValue placeholder="All branches" />
             </SelectTrigger>
@@ -243,7 +270,13 @@ export default function AnalyticsClient({
             </SelectContent>
           </Select>
           <span>Trend range</span>
-          <RangeSelect value={range} onValueChange={setRange} />
+          <RangeSelect
+            value={range}
+            onValueChange={(v) => {
+              setRange(v);
+              syncToUrl({ range: v === "7d" ? null : v });
+            }}
+          />
         </div>
       </div>
 

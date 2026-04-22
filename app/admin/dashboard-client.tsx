@@ -40,6 +40,7 @@ import {
   sparseTickLabel,
   type RangeKey,
 } from "@/lib/range-metrics";
+import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import type { OrderWithItems } from "@/lib/database.types";
 
 type ProductRow = {
@@ -100,7 +101,25 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 export default function DashboardClient({ orders, products, toppings }: Props) {
-  const [range, setRange] = React.useState<RangeKey>("7d");
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const pathname = usePathname();
+
+  function syncToUrl(updates: Record<string, string | null>) {
+    const params = new URLSearchParams(searchParams.toString());
+    for (const [key, value] of Object.entries(updates)) {
+      if (value === null || value === "") {
+        params.delete(key);
+      } else {
+        params.set(key, value);
+      }
+    }
+    router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+  }
+
+  const [range, setRange] = React.useState<RangeKey>(
+    (searchParams.get("range") as RangeKey) ?? "7d",
+  );
   const now = new Date();
 
   const cutoff = getRangeCutoff(range, now);
@@ -221,7 +240,13 @@ export default function DashboardClient({ orders, products, toppings }: Props) {
         </div>
         <div className="flex items-center gap-3 text-xs text-muted-foreground">
           <span>Time range</span>
-          <RangeSelect value={range} onValueChange={setRange} />
+          <RangeSelect
+            value={range}
+            onValueChange={(v) => {
+              setRange(v);
+              syncToUrl({ range: v === "7d" ? null : v });
+            }}
+          />
         </div>
       </div>
 

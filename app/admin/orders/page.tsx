@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { createAdminClient } from "@/lib/supabase";
 import type { OrderWithItems } from "@/lib/database.types";
 import OrdersClient from "./orders-client";
@@ -15,5 +16,9 @@ async function fetchOrders(): Promise<OrderWithItems[]> {
 
 export default async function OrdersPage() {
   const orders = await fetchOrders();
-  return <OrdersClient initialOrders={orders} />;
+  return (
+    <Suspense>
+      <OrdersClient initialOrders={orders} />
+    </Suspense>
+  );
 }

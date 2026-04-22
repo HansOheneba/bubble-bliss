@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { createAdminClient } from "@/lib/supabase";
 import type {
   Order,
@@ -417,5 +418,9 @@ async function fetchAnalyticsData() {
 
 export default async function AnalyticsPage() {
   const data = await fetchAnalyticsData();
-  return <AnalyticsClient {...data} />;
+  return (
+    <Suspense>
+      <AnalyticsClient {...data} />
+    </Suspense>
+  );
 }

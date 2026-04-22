@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { createAdminClient } from "@/lib/supabase";
 import type { OrderWithItems } from "@/lib/database.types";
 import DashboardClient from "./dashboard-client";
@@ -25,5 +26,9 @@ async function fetchDashboardData() {
 
 export default async function AdminPage() {
   const data = await fetchDashboardData();
-  return <DashboardClient {...data} />;
+  return (
+    <Suspense>
+      <DashboardClient {...data} />
+    </Suspense>
+  );
 }

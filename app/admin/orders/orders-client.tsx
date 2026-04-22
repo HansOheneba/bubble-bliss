@@ -32,6 +32,7 @@ import {
 } from "@/components/ui/dialog";
 import { Separator } from "@/components/ui/separator";
 import { ChevronDown, Search, X } from "lucide-react";
+import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
 import type { OrderWithItems } from "@/lib/database.types";
@@ -146,18 +147,44 @@ function statusRank(status: string): number {
 }
 
 export default function OrdersClient({ initialOrders }: Props) {
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const pathname = usePathname();
+
+  function syncToUrl(updates: Record<string, string | null>) {
+    const params = new URLSearchParams(searchParams.toString());
+    for (const [key, value] of Object.entries(updates)) {
+      if (value === null || value === "") {
+        params.delete(key);
+      } else {
+        params.set(key, value);
+      }
+    }
+    router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+  }
+
   const [orders, setOrders] = React.useState<OrderWithItems[]>(initialOrders);
-  const [query, setQuery] = React.useState("");
+  const [query, setQuery] = React.useState(searchParams.get("q") ?? "");
   const [selectedStatuses, setSelectedStatuses] = React.useState<OrderStatus[]>(
-    [],
+    (searchParams.get("statuses")?.split(",").filter(Boolean) ?? []) as OrderStatus[],
   );
-  const [selectedBranches, setSelectedBranches] = React.useState<string[]>([]);
-  const [selectedPayment, setSelectedPayment] = React.useState<string[]>([]);
-  const [selectedSource, setSelectedSource] = React.useState<string[]>([]);
-  const [sortMode, setSortMode] = React.useState<"queue" | "latest">("queue");
+  const [selectedBranches, setSelectedBranches] = React.useState<string[]>(
+    searchParams.get("branches")?.split(",").filter(Boolean) ?? [],
+  );
+  const [selectedPayment, setSelectedPayment] = React.useState<string[]>(
+    searchParams.get("payment")?.split(",").filter(Boolean) ?? [],
+  );
+  const [selectedSource, setSelectedSource] = React.useState<string[]>(
+    searchParams.get("source")?.split(",").filter(Boolean) ?? [],
+  );
+  const [sortMode, setSortMode] = React.useState<"queue" | "latest">(
+    (searchParams.get("sort") as "queue" | "latest") ?? "queue",
+  );
   const [dateRange, setDateRange] = React.useState<
     "all" | "today" | "yesterday" | "7d"
-  >("all");
+  >(
+    (searchParams.get("date") as "all" | "today" | "yesterday" | "7d") ?? "all",
+  );
   const [open, setOpen] = React.useState(false);
   const [activeOrderId, setActiveOrderId] = React.useState<number | null>(null);
   const [updatingId, setUpdatingId] = React.useState<number | null>(null);
@@ -295,7 +322,10 @@ export default function OrdersClient({ initialOrders }: Props) {
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
             value={query}
-            onChange={(e) => setQuery(e.target.value)}
+            onChange={(e) => {
+              setQuery(e.target.value);
+              syncToUrl({ q: e.target.value || null });
+            }}
             placeholder="Search by order #, name, phone, items..."
             className="pl-9"
           />
@@ -318,13 +348,13 @@ export default function OrdersClient({ initialOrders }: Props) {
               <DropdownMenuSeparator />
               <DropdownMenuCheckboxItem
                 checked={sortMode === "queue"}
-                onCheckedChange={() => setSortMode("queue")}
+                onCheckedChange={() => { setSortMode("queue"); syncToUrl({ sort: null }); }}
               >
                 First come first serve
               </DropdownMenuCheckboxItem>
               <DropdownMenuCheckboxItem
                 checked={sortMode === "latest"}
-                onCheckedChange={() => setSortMode("latest")}
+                onCheckedChange={() => { setSortMode("latest"); syncToUrl({ sort: "latest" }); }}
               >
                 Latest first
               </DropdownMenuCheckboxItem>
@@ -362,7 +392,7 @@ export default function OrdersClient({ initialOrders }: Props) {
                 <DropdownMenuCheckboxItem
                   key={val}
                   checked={dateRange === val}
-                  onCheckedChange={() => setDateRange(val)}
+                  onCheckedChange={() => { setDateRange(val); syncToUrl({ date: val === "all" ? null : val }); }}
                 >
                   {label}
                 </DropdownMenuCheckboxItem>
@@ -390,11 +420,13 @@ export default function OrdersClient({ initialOrders }: Props) {
                 <DropdownMenuCheckboxItem
                   key={s}
                   checked={selectedStatuses.includes(s)}
-                  onCheckedChange={(checked) =>
-                    setSelectedStatuses((prev) =>
-                      checked ? [...prev, s] : prev.filter((x) => x !== s),
-                    )
-                  }
+                  onCheckedChange={(checked) => {
+                    const next = checked
+                      ? [...selectedStatuses, s]
+                      : selectedStatuses.filter((x) => x !== s);
+                    setSelectedStatuses(next);
+                    syncToUrl({ statuses: next.join(",") || null });
+                  }}
                 >
                   {s}
                 </DropdownMenuCheckboxItem>
@@ -423,11 +455,13 @@ export default function OrdersClient({ initialOrders }: Props) {
                   <DropdownMenuCheckboxItem
                     key={b}
                     checked={selectedBranches.includes(b)}
-                    onCheckedChange={(checked) =>
-                      setSelectedBranches((prev) =>
-                        checked ? [...prev, b] : prev.filter((x) => x !== b),
-                      )
-                    }
+                    onCheckedChange={(checked) => {
+                      const next = checked
+                        ? [...selectedBranches, b]
+                        : selectedBranches.filter((x) => x !== b);
+                      setSelectedBranches(next);
+                      syncToUrl({ branches: next.join(",") || null });
+                    }}
                   >
                     {b}
                   </DropdownMenuCheckboxItem>
@@ -456,11 +490,13 @@ export default function OrdersClient({ initialOrders }: Props) {
                 <DropdownMenuCheckboxItem
                   key={p}
                   checked={selectedPayment.includes(p)}
-                  onCheckedChange={(checked) =>
-                    setSelectedPayment((prev) =>
-                      checked ? [...prev, p] : prev.filter((x) => x !== p),
-                    )
-                  }
+                  onCheckedChange={(checked) => {
+                    const next = checked
+                      ? [...selectedPayment, p]
+                      : selectedPayment.filter((x) => x !== p);
+                    setSelectedPayment(next);
+                    syncToUrl({ payment: next.join(",") || null });
+                  }}
                 >
                   {p}
                 </DropdownMenuCheckboxItem>
@@ -488,11 +524,13 @@ export default function OrdersClient({ initialOrders }: Props) {
                 <DropdownMenuCheckboxItem
                   key={s}
                   checked={selectedSource.includes(s)}
-                  onCheckedChange={(checked) =>
-                    setSelectedSource((prev) =>
-                      checked ? [...prev, s] : prev.filter((x) => x !== s),
-                    )
-                  }
+                  onCheckedChange={(checked) => {
+                    const next = checked
+                      ? [...selectedSource, s]
+                      : selectedSource.filter((x) => x !== s);
+                    setSelectedSource(next);
+                    syncToUrl({ source: next.join(",") || null });
+                  }}
                 >
                   {s}
                 </DropdownMenuCheckboxItem>
@@ -512,6 +550,7 @@ export default function OrdersClient({ initialOrders }: Props) {
                 setSelectedSource([]);
                 setDateRange("all");
                 setSortMode("queue");
+                syncToUrl({ statuses: null, branches: null, payment: null, source: null, date: null, sort: null });
               }}
             >
               <X className="h-4 w-4" />
