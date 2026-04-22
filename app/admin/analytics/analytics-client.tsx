@@ -40,7 +40,7 @@ import {
 import {
   buildRangeSeries,
   getRangeCutoff,
-  getRangeLabel,
+  getDisplayLabel,
   getRangeTickStep,
   sparseTickLabel,
   type RangeKey,
@@ -53,6 +53,7 @@ import type {
   TellerStat,
   PaymentStat,
   SourceStat,
+  CustomerStat,
 } from "./page";
 
 type Props = {
@@ -63,13 +64,12 @@ type Props = {
   tellerStats: TellerStat[];
   paymentStats: PaymentStat[];
   sourceStats: SourceStat[];
-  cupsUsed: number;
+  customerStats: CustomerStat[];
   branches: string[];
   branchProductStats: Record<string, ProductStat[]>;
   branchToppingStats: Record<string, ToppingStat[]>;
   branchPaymentStats: Record<string, PaymentStat[]>;
   branchSourceStats: Record<string, SourceStat[]>;
-  branchCupsUsed: Record<string, number>;
 };
 
 const CHART_COLORS = [
@@ -96,13 +96,12 @@ export default function AnalyticsClient({
   tellerStats,
   paymentStats,
   sourceStats,
-  cupsUsed,
+  customerStats,
   branches,
   branchProductStats,
   branchToppingStats,
   branchPaymentStats,
   branchSourceStats,
-  branchCupsUsed,
 }: Props) {
   const [range, setRange] = React.useState<RangeKey>("7d");
   const [selectedBranch, setSelectedBranch] = React.useState<string>("all");
@@ -129,8 +128,6 @@ export default function AnalyticsClient({
     selectedBranch === "all"
       ? sourceStats
       : (branchSourceStats[selectedBranch] ?? []);
-  const activeCupsUsed =
-    selectedBranch === "all" ? cupsUsed : (branchCupsUsed[selectedBranch] ?? 0);
   const activeBranchStats =
     selectedBranch === "all"
       ? branchStats
@@ -260,7 +257,7 @@ export default function AnalyticsClient({
             {totalOrders}
           </p>
           <p className="mt-1 text-xs text-muted-foreground">
-            {getRangeLabel(range)}
+            {getDisplayLabel(range)}
           </p>
         </div>
         <div className="rounded-lg border bg-card p-6">
@@ -271,7 +268,7 @@ export default function AnalyticsClient({
             {formatMoney(totalRevenueGhs)}
           </p>
           <p className="mt-1 text-xs text-muted-foreground">
-            {getRangeLabel(range)}
+            {getDisplayLabel(range)}
           </p>
         </div>
         <div className="rounded-lg border bg-card p-6">
@@ -291,7 +288,7 @@ export default function AnalyticsClient({
             {completedInRange}
           </p>
           <p className="mt-1 text-xs text-muted-foreground">
-            {getRangeLabel(range)}
+            {getDisplayLabel(range)}
           </p>
         </div>
         <div className="rounded-lg border bg-card p-6">
@@ -773,6 +770,121 @@ export default function AnalyticsClient({
           </>
         )}
       </div>
+      {/* Customer insights */}
+      {customerStats.length > 0 && (
+        <div className="space-y-4">
+          <div>
+            <p className="text-xl font-semibold text-foreground">
+              Customer insights
+            </p>
+            <p className="text-sm text-muted-foreground mt-0.5">
+              Based on phone number. Returning customers have placed more than one order.
+            </p>
+          </div>
+
+          {/* Summary KPI row */}
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="rounded-lg border bg-card p-5">
+              <p className="text-sm font-medium text-muted-foreground">
+                Total customers
+              </p>
+              <p className="mt-2 text-3xl font-bold text-foreground">
+                {customerStats.length}
+              </p>
+            </div>
+            <div className="rounded-lg border bg-card p-5">
+              <p className="text-sm font-medium text-muted-foreground">
+                Returning customers
+              </p>
+              <p className="mt-2 text-3xl font-bold text-foreground">
+                {customerStats.filter((c) => c.isReturning).length}
+              </p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {customerStats.length > 0
+                  ? `${Math.round((customerStats.filter((c) => c.isReturning).length / customerStats.length) * 100)}% retention`
+                  : ""}
+              </p>
+            </div>
+            <div className="rounded-lg border bg-card p-5">
+              <p className="text-sm font-medium text-muted-foreground">
+                Top spender
+              </p>
+              <p className="mt-2 text-xl font-bold text-foreground truncate">
+                {[...customerStats].sort((a, b) => b.totalSpendGhs - a.totalSpendGhs)[0]?.name ?? "—"}
+              </p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {formatMoney([...customerStats].sort((a, b) => b.totalSpendGhs - a.totalSpendGhs)[0]?.totalSpendGhs ?? 0)} total
+              </p>
+            </div>
+            <div className="rounded-lg border bg-card p-5">
+              <p className="text-sm font-medium text-muted-foreground">
+                Most frequent
+              </p>
+              <p className="mt-2 text-xl font-bold text-foreground truncate">
+                {customerStats[0]?.name ?? "—"}
+              </p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {customerStats[0]?.orders ?? 0} orders
+              </p>
+            </div>
+          </div>
+
+          {/* Top customers table */}
+          <div className="rounded-lg border bg-card">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Customer</TableHead>
+                  <TableHead>Phone</TableHead>
+                  <TableHead className="text-right">Orders</TableHead>
+                  <TableHead className="text-right">Total spend</TableHead>
+                  <TableHead className="text-right">Avg / order</TableHead>
+                  <TableHead className="text-right">Last order</TableHead>
+                  <TableHead>Type</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {customerStats.slice(0, 20).map((c) => (
+                  <TableRow key={c.phone}>
+                    <TableCell className="font-medium">{c.name}</TableCell>
+                    <TableCell className="text-muted-foreground text-sm font-mono">
+                      {c.phone}
+                    </TableCell>
+                    <TableCell className="text-right font-semibold">
+                      {c.orders}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {formatMoney(c.totalSpendGhs)}
+                    </TableCell>
+                    <TableCell className="text-right text-muted-foreground">
+                      {formatMoney(c.avgOrderGhs)}
+                    </TableCell>
+                    <TableCell className="text-right text-xs text-muted-foreground">
+                      {c.lastOrderAt
+                        ? new Date(c.lastOrderAt).toLocaleDateString("en-GH", {
+                            month: "short",
+                            day: "numeric",
+                          })
+                        : "—"}
+                    </TableCell>
+                    <TableCell>
+                      {c.isReturning ? (
+                        <Badge className="bg-green-100 text-green-800 dark:bg-green-950/50 dark:text-green-400 border-0 text-xs">
+                          Returning
+                        </Badge>
+                      ) : (
+                        <Badge variant="secondary" className="text-xs">
+                          New
+                        </Badge>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

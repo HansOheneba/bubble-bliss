@@ -63,6 +63,17 @@ export type SourceStat = {
   count: number;
 };
 
+export type CustomerStat = {
+  phone: string;
+  name: string;
+  orders: number;
+  totalSpendGhs: number;
+  avgOrderGhs: number;
+  lastOrderAt: string | null;
+  firstOrderAt: string | null;
+  isReturning: boolean;
+};
+
 async function fetchAnalyticsData() {
   const db = createAdminClient();
 
@@ -343,6 +354,48 @@ async function fetchAnalyticsData() {
     branchCupsUsed[name] = acc.cupsUsed;
   }
 
+  // ── Customer insights (grouped by phone number) ──────────────────────────
+  type CustomerAccum = {
+    name: string;
+    orders: number;
+    totalSpendGhs: number;
+    lastOrderAt: string | null;
+    firstOrderAt: string | null;
+  };
+  const customerMap = new Map<string, CustomerAccum>();
+  for (const o of orders) {
+    const phone = o.phone?.trim();
+    if (!phone) continue;
+    const cur = customerMap.get(phone) ?? {
+      name: o.customer_name ?? phone,
+      orders: 0,
+      totalSpendGhs: 0,
+      lastOrderAt: null,
+      firstOrderAt: null,
+    };
+    cur.orders += 1;
+    cur.totalSpendGhs += o.total_pesewas / 100;
+    if (o.customer_name && cur.name === phone) cur.name = o.customer_name;
+    const at = o.created_at;
+    if (at) {
+      if (!cur.lastOrderAt || at > cur.lastOrderAt) cur.lastOrderAt = at;
+      if (!cur.firstOrderAt || at < cur.firstOrderAt) cur.firstOrderAt = at;
+    }
+    customerMap.set(phone, cur);
+  }
+  const customerStats: CustomerStat[] = [...customerMap.entries()]
+    .map(([phone, c]) => ({
+      phone,
+      name: c.name,
+      orders: c.orders,
+      totalSpendGhs: c.totalSpendGhs,
+      avgOrderGhs: c.orders > 0 ? c.totalSpendGhs / c.orders : 0,
+      lastOrderAt: c.lastOrderAt,
+      firstOrderAt: c.firstOrderAt,
+      isReturning: c.orders > 1,
+    }))
+    .sort((a, b) => b.orders - a.orders);
+
   return {
     slimOrders,
     branchStats,
@@ -358,6 +411,7 @@ async function fetchAnalyticsData() {
     branchPaymentStats,
     branchSourceStats,
     branchCupsUsed,
+    customerStats,
   };
 }
 

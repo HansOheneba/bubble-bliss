@@ -35,6 +35,7 @@ import {
   buildRangeSeries,
   getRangeCutoff,
   getRangeLabel,
+  getDisplayLabel,
   getRangeTickStep,
   sparseTickLabel,
   type RangeKey,
@@ -278,7 +279,7 @@ export default function DashboardClient({ orders, products, toppings }: Props) {
           <div className="flex items-center justify-between">
             <div>
               <div className="text-base font-semibold text-foreground">
-                Revenue trend (Last {rangeLabel})
+                Revenue trend ({getDisplayLabel(range)})
               </div>
               <div className="text-sm text-muted-foreground">
                 Delivered order revenue.
@@ -375,7 +376,7 @@ export default function DashboardClient({ orders, products, toppings }: Props) {
         <div className="flex items-center justify-between">
           <div>
             <div className="text-base font-semibold text-foreground">
-              Orders volume (Last {rangeLabel})
+              Orders volume ({getDisplayLabel(range)})
             </div>
             <div className="text-sm text-muted-foreground">
               Daily order count across all statuses.

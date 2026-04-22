@@ -155,6 +155,7 @@ export default function OrdersClient({ initialOrders }: Props) {
   const [selectedPayment, setSelectedPayment] = React.useState<string[]>([]);
   const [selectedSource, setSelectedSource] = React.useState<string[]>([]);
   const [sortMode, setSortMode] = React.useState<"queue" | "latest">("queue");
+  const [dateRange, setDateRange] = React.useState<"all" | "today" | "yesterday" | "7d">("all");
   const [open, setOpen] = React.useState(false);
   const [activeOrderId, setActiveOrderId] = React.useState<number | null>(null);
   const [updatingId, setUpdatingId] = React.useState<number | null>(null);
@@ -208,6 +209,26 @@ export default function OrdersClient({ initialOrders }: Props) {
         !selectedSource.includes(o.order_source ?? "")
       )
         return false;
+
+      // Date range filter
+      if (dateRange !== "all") {
+        const created = new Date(o.created_at ?? 0);
+        const now = new Date();
+        const todayStart = new Date(now);
+        todayStart.setHours(0, 0, 0, 0);
+        if (dateRange === "today") {
+          if (created < todayStart) return false;
+        } else if (dateRange === "yesterday") {
+          const yStart = new Date(todayStart);
+          yStart.setDate(yStart.getDate() - 1);
+          if (created < yStart || created >= todayStart) return false;
+        } else if (dateRange === "7d") {
+          const cutoff = new Date(now);
+          cutoff.setDate(cutoff.getDate() - 7);
+          if (created < cutoff) return false;
+        }
+      }
+
       return true;
     });
 
@@ -229,6 +250,7 @@ export default function OrdersClient({ initialOrders }: Props) {
     selectedBranches,
     selectedPayment,
     selectedSource,
+    dateRange,
     sortMode,
   ]);
 
@@ -237,6 +259,7 @@ export default function OrdersClient({ initialOrders }: Props) {
     selectedBranches.length > 0 ||
     selectedPayment.length > 0 ||
     selectedSource.length > 0 ||
+    dateRange !== "all" ||
     sortMode !== "queue";
 
   async function updateOrderStatus(orderId: number, status: OrderStatus) {
@@ -303,6 +326,45 @@ export default function OrdersClient({ initialOrders }: Props) {
               >
                 Latest first
               </DropdownMenuCheckboxItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          {/* Date range filter */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm" className="h-9 gap-2">
+                Date
+                <ChevronDown className="h-4 w-4 opacity-50" />
+                <Badge variant="secondary" className="ml-1">
+                  {dateRange === "all"
+                    ? "All time"
+                    : dateRange === "today"
+                      ? "Today"
+                      : dateRange === "yesterday"
+                        ? "Yesterday"
+                        : "Last 7 days"}
+                </Badge>
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="w-44">
+              <DropdownMenuLabel>Filter by date</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              {(
+                [
+                  ["all", "All time"],
+                  ["today", "Today"],
+                  ["yesterday", "Yesterday"],
+                  ["7d", "Last 7 days"],
+                ] as const
+              ).map(([val, label]) => (
+                <DropdownMenuCheckboxItem
+                  key={val}
+                  checked={dateRange === val}
+                  onCheckedChange={() => setDateRange(val)}
+                >
+                  {label}
+                </DropdownMenuCheckboxItem>
+              ))}
             </DropdownMenuContent>
           </DropdownMenu>
 
@@ -446,6 +508,7 @@ export default function OrdersClient({ initialOrders }: Props) {
                 setSelectedBranches([]);
                 setSelectedPayment([]);
                 setSelectedSource([]);
+                setDateRange("all");
                 setSortMode("queue");
               }}
             >

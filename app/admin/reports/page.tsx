@@ -42,7 +42,7 @@ import {
 } from "@/lib/customers";
 import {
   buildRangeSeries,
-  getRangeLabel,
+  getDisplayLabel,
   getRangeTickStep,
   sparseTickLabel,
   type RangeKey,
@@ -101,7 +101,6 @@ export default function ReportsPage() {
   const maxRevenue = Math.max(...revenueValues, 1);
   const maxOrders = Math.max(...orderValues, 1);
   const tickStep = getRangeTickStep(range);
-  const rangeLabel = getRangeLabel(range);
 
   const revenueChartConfig = {
     revenue: {
@@ -255,7 +254,7 @@ export default function ReportsPage() {
           <div className="flex items-center justify-between">
             <div>
               <div className="text-sm font-medium text-muted-foreground">
-                Revenue trend (Last {rangeLabel})
+                Revenue trend ({getDisplayLabel(range)})
               </div>
               <div className="text-xs text-muted-foreground">
                 Completed order revenue per day.
@@ -312,7 +311,7 @@ export default function ReportsPage() {
           <div className="flex items-center justify-between">
             <div>
               <div className="text-sm font-medium text-muted-foreground">
-                Order volume (Last {rangeLabel})
+                Order volume ({getDisplayLabel(range)})
               </div>
               <div className="text-xs text-muted-foreground">
                 All order statuses combined.
@@ -358,7 +357,7 @@ export default function ReportsPage() {
       <div className="grid gap-4 lg:grid-cols-3">
         <div className="rounded-lg border bg-card p-5">
           <div className="text-sm font-medium text-muted-foreground">
-            Avg order value (Last {rangeLabel})
+            Avg order value ({getDisplayLabel(range)})
           </div>
           <div className="mt-4">
             <ChartContainer

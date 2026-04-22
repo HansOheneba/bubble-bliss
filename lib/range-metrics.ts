@@ -159,6 +159,12 @@ export function getRangeLabel(range: RangeKey) {
   return RANGE_OPTIONS.find((option) => option.value === range)?.label ?? range;
 }
 
+/** Returns the label with "Last " prefix, except for "today" which stands alone. */
+export function getDisplayLabel(range: RangeKey) {
+  const label = getRangeLabel(range);
+  return range === "today" ? label : `Last ${label}`;
+}
+
 export function getRangeTickStep(range: RangeKey) {
   return RANGE_META[range].tickStep;
 }
