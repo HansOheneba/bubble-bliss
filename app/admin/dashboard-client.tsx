@@ -130,11 +130,13 @@ export default function DashboardClient({ orders, products, toppings }: Props) {
     .filter((o) => o.payment_status === "paid")
     .reduce((acc, o) => acc + pesewasToGhs(o.total_pesewas), 0);
 
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const openOrders = orders.filter(
     (o) =>
-      o.status === "pending" ||
-      o.status === "confirmed" ||
-      o.status === "preparing",
+      (o.status === "pending" ||
+        o.status === "confirmed" ||
+        o.status === "preparing") &&
+      (o.created_at ? new Date(o.created_at) >= todayStart : false),
   );
 
   const deliveredOrders = rangeOrders.filter((o) => o.status === "delivered");
@@ -265,7 +267,7 @@ export default function DashboardClient({ orders, products, toppings }: Props) {
         </div>
         <div className="rounded-lg border bg-card p-6">
           <div className="text-sm font-medium text-muted-foreground">
-            Open Orders
+            Open Orders Today
           </div>
           <div className="mt-2 text-3xl font-bold text-foreground">
             {openOrders.length}
