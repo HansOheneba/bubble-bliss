@@ -34,6 +34,13 @@ import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import RangeSelect from "@/components/admin/range-select";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   buildRangeSeries,
   getRangeCutoff,
   getRangeLabel,
@@ -60,7 +67,20 @@ type Props = {
   orders: OrderWithItems[];
   products: ProductRow[];
   toppings: ToppingRow[];
+  shawarmaProductIds: number[];
 };
+
+function paymentLabel(method: string) {
+  const map: Record<string, string> = {
+    cash: "Cash",
+    hubtel: "Hubtel",
+    momo: "Mobile Money",
+  };
+  return (
+    map[method.toLowerCase()] ??
+    method.charAt(0).toUpperCase() + method.slice(1)
+  );
+}
 
 function formatMoney(value: number) {
   return new Intl.NumberFormat("en-GH", {
@@ -72,6 +92,21 @@ function formatMoney(value: number) {
 
 function pesewasToGhs(pesewas: number) {
   return pesewas / 100;
+}
+
+function SizeBadge({ size }: { size: string }) {
+  const lower = size.toLowerCase();
+  const styles =
+    lower === "large"
+      ? "bg-orange-100 text-orange-800 dark:bg-orange-950/50 dark:text-orange-400 dark:border dark:border-orange-800/50"
+      : lower === "medium"
+        ? "bg-blue-100 text-blue-800 dark:bg-blue-950/50 dark:text-blue-400 dark:border dark:border-blue-800/50"
+        : "bg-muted text-muted-foreground";
+  return (
+    <Badge className={styles} variant="default">
+      {size}
+    </Badge>
+  );
 }
 
 function StatusBadge({ status }: { status: string }) {
@@ -102,7 +137,12 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 
-export default function DashboardClient({ orders, products, toppings }: Props) {
+export default function DashboardClient({
+  orders,
+  products,
+  toppings,
+  shawarmaProductIds,
+}: Props) {
   const searchParams = useSearchParams();
   const router = useRouter();
   const pathname = usePathname();
@@ -120,14 +160,25 @@ export default function DashboardClient({ orders, products, toppings }: Props) {
   }
 
   const [range, setRange] = React.useState<RangeKey>(
-    (searchParams.get("range") as RangeKey) ?? "7d",
+    (searchParams.get("range") as RangeKey) ?? "today",
+  );
+  const [selectedBranch, setSelectedBranch] = React.useState<string>(
+    searchParams.get("branch") ?? "all",
   );
   const now = new Date();
 
+  const branches = [...new Set(orders.map((o) => o.branch?.name ?? "Unknown"))]
+    .filter(Boolean)
+    .sort();
+
   const cutoff = getRangeCutoff(range, now);
-  const rangeOrders = orders.filter((o) =>
-    o.created_at ? new Date(o.created_at) >= cutoff : false,
-  );
+  const rangeOrders = orders.filter((o) => {
+    const inRange = o.created_at ? new Date(o.created_at) >= cutoff : false;
+    const inBranch =
+      selectedBranch === "all" ||
+      (o.branch?.name ?? "Unknown") === selectedBranch;
+    return inRange && inBranch;
+  });
   const rangeRevenuePaid = rangeOrders
     .filter((o) => o.payment_status === "paid")
     .reduce((acc, o) => acc + pesewasToGhs(o.total_pesewas), 0);
@@ -141,15 +192,76 @@ export default function DashboardClient({ orders, products, toppings }: Props) {
       (o.created_at ? new Date(o.created_at) >= todayStart : false),
   );
 
-  const todayOrders = orders.filter(
-    (o) =>
-      o.status !== "cancelled" &&
-      (o.created_at ? new Date(o.created_at) >= todayStart : false),
+  const shawarmaIdSet = new Set(shawarmaProductIds);
+
+  // Revenue breakdown by payment method (paid orders only)
+  const revenueByPayment = (() => {
+    const map = new Map<string, { ghs: number; count: number }>();
+    for (const o of rangeOrders.filter((o) => o.payment_status === "paid")) {
+      const method = o.payment_method ?? "hubtel";
+      const cur = map.get(method) ?? { ghs: 0, count: 0 };
+      cur.ghs += pesewasToGhs(o.total_pesewas);
+      cur.count += 1;
+      map.set(method, cur);
+    }
+    return [...map.entries()]
+      .map(([method, s]) => ({ method, ...s }))
+      .sort((a, b) => b.ghs - a.ghs);
+  })();
+
+  // Shawarma analytics
+  type ShawarmaItemStat = {
+    productName: string;
+    variantLabel: string;
+    qty: number;
+    revenueGhs: number;
+  };
+  const shawarmaStatMap = new Map<string, ShawarmaItemStat>();
+  for (const order of rangeOrders.filter((o) => o.status !== "cancelled")) {
+    for (const item of order.items) {
+      if (item.product_id !== null && shawarmaIdSet.has(item.product_id)) {
+        const variantLabel = item.variant_label ?? "Regular";
+        const key = `${item.product_name}__${variantLabel}`;
+        const cur = shawarmaStatMap.get(key) ?? {
+          productName: item.product_name,
+          variantLabel,
+          qty: 0,
+          revenueGhs: 0,
+        };
+        cur.qty += item.quantity;
+        cur.revenueGhs += (item.unit_pesewas * item.quantity) / 100;
+        shawarmaStatMap.set(key, cur);
+      }
+    }
+  }
+  const shawarmaItemStats = [...shawarmaStatMap.values()].sort(
+    (a, b) => b.qty - a.qty,
   );
-  const cupsToday = todayOrders.reduce(
-    (acc, o) => acc + o.items.reduce((s, item) => s + (item.quantity ?? 0), 0),
+  const shawarmaBySize: Record<string, number> = {};
+  for (const stat of shawarmaItemStats) {
+    shawarmaBySize[stat.variantLabel] =
+      (shawarmaBySize[stat.variantLabel] ?? 0) + stat.qty;
+  }
+  const totalShawarmasSold = shawarmaItemStats.reduce(
+    (acc, s) => acc + s.qty,
     0,
   );
+
+  const cupsInRange = rangeOrders
+    .filter((o) => o.status === "completed")
+    .reduce(
+      (acc, o) =>
+        acc +
+        o.items.reduce(
+          (s, item) =>
+            s +
+            (item.product_id === null || !shawarmaIdSet.has(item.product_id)
+              ? (item.quantity ?? 0)
+              : 0),
+          0,
+        ),
+      0,
+    );
 
   const deliveredOrders = rangeOrders.filter((o) => o.status === "delivered");
   const revenueDelivered = deliveredOrders.reduce(
@@ -191,7 +303,6 @@ export default function DashboardClient({ orders, products, toppings }: Props) {
   const maxRevenue = Math.max(...revenueByDay.map((d) => d.revenue), 1);
   const maxOrders = Math.max(...ordersByDay.map((d) => d.orders), 1);
   const tickStep = getRangeTickStep(range);
-  const rangeLabel = getRangeLabel(range);
 
   const statusSegments = [
     {
@@ -248,17 +359,40 @@ export default function DashboardClient({ orders, products, toppings }: Props) {
             Dashboard
           </h1>
           <p className="text-sm text-muted-foreground">
-            Welcome to BubbleBliss Cafe Admin. Manage your orders, products, and
-            operations.
+            Welcome to BubbleBliss Cafe Admin. Metrics below are for{" "}
+            <span className="font-medium text-foreground">
+              {getDisplayLabel(range)}
+            </span>
+            .
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
-          <span className="text-xs text-muted-foreground">Time range</span>
+          <span className="text-xs text-muted-foreground">Branch</span>
+          <Select
+            value={selectedBranch}
+            onValueChange={(v) => {
+              setSelectedBranch(v);
+              syncToUrl({ branch: v === "all" ? null : v });
+            }}
+          >
+            <SelectTrigger size="sm" className="min-w-36">
+              <SelectValue placeholder="All branches" />
+            </SelectTrigger>
+            <SelectContent align="end">
+              <SelectItem value="all">All branches</SelectItem>
+              {branches.map((b) => (
+                <SelectItem key={b} value={b}>
+                  {b}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <span className="text-xs text-muted-foreground">Range</span>
           <RangeSelect
             value={range}
             onValueChange={(v) => {
               setRange(v);
-              syncToUrl({ range: v === "7d" ? null : v });
+              syncToUrl({ range: v === "today" ? null : v });
             }}
           />
           <Button asChild variant="outline" size="sm">
@@ -293,13 +427,13 @@ export default function DashboardClient({ orders, products, toppings }: Props) {
         </div>
         <div className="rounded-lg border bg-card p-4 sm:p-6">
           <div className="text-xs font-medium text-muted-foreground sm:text-sm">
-            Cups Today
+            Cups Served
           </div>
           <div className="mt-2 text-2xl font-bold text-foreground sm:text-3xl">
-            {cupsToday}
+            {cupsInRange}
           </div>
           <div className="mt-1 text-xs text-muted-foreground">
-            Items across {todayOrders.length} orders
+            {getDisplayLabel(range)}, completed orders
           </div>
         </div>
         <div className="rounded-lg border bg-card p-4 sm:p-6">
@@ -475,13 +609,31 @@ export default function DashboardClient({ orders, products, toppings }: Props) {
       <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
         <div className="rounded-lg border bg-card p-4 sm:p-6">
           <div className="text-xs font-medium text-muted-foreground sm:text-sm">
-            Total Revenue
+            Revenue by Payment
           </div>
           <div className="mt-2 text-2xl font-bold text-foreground sm:text-3xl">
-            {formatMoney(revenueDelivered)}
+            {formatMoney(rangeRevenuePaid)}
           </div>
-          <div className="mt-1 text-xs text-muted-foreground">
-            From {deliveredOrders.length} delivered orders
+          <div className="mt-2 space-y-1">
+            {revenueByPayment.length === 0 ? (
+              <div className="text-xs text-muted-foreground">
+                No paid orders
+              </div>
+            ) : (
+              revenueByPayment.map((p) => (
+                <div
+                  key={p.method}
+                  className="flex items-center justify-between text-xs"
+                >
+                  <span className="text-muted-foreground">
+                    {paymentLabel(p.method)}
+                  </span>
+                  <span className="font-medium text-foreground">
+                    {formatMoney(p.ghs)}
+                  </span>
+                </div>
+              ))
+            )}
           </div>
         </div>
         <div className="rounded-lg border bg-card p-4 sm:p-6">
@@ -519,6 +671,79 @@ export default function DashboardClient({ orders, products, toppings }: Props) {
             ))}
           </div>
         </div>
+      </div>
+
+      {/* Shawarma Sales */}
+      <div className="rounded-lg border bg-card p-4 sm:p-6">
+        <div className="mb-4 flex items-center justify-between">
+          <div>
+            <div className="text-base font-semibold text-foreground">
+              Shawarma Sales
+            </div>
+            <div className="text-sm text-muted-foreground">
+              Breakdown by product and size for {getDisplayLabel(range)}
+            </div>
+          </div>
+          <div className="text-right">
+            <div className="text-xs text-muted-foreground">Total sold</div>
+            <div className="text-lg font-bold text-foreground">
+              {totalShawarmasSold}
+            </div>
+          </div>
+        </div>
+
+        {Object.keys(shawarmaBySize).length > 0 && (
+          <div className="mb-4 flex flex-wrap gap-2">
+            {Object.entries(shawarmaBySize)
+              .sort((a, b) => b[1] - a[1])
+              .map(([size, qty]) => (
+                <div
+                  key={size}
+                  className="flex items-center gap-1.5 rounded-full border bg-muted px-3 py-1 text-xs"
+                >
+                  <span className="font-medium text-foreground">{size}:</span>
+                  <span className="font-bold text-foreground">{qty}</span>
+                </div>
+              ))}
+          </div>
+        )}
+
+        {shawarmaItemStats.length === 0 ? (
+          <p className="py-4 text-center text-sm text-muted-foreground">
+            No shawarma orders for {getDisplayLabel(range).toLowerCase()}.
+          </p>
+        ) : (
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Product</TableHead>
+                  <TableHead>Size</TableHead>
+                  <TableHead className="text-right">Qty</TableHead>
+                  <TableHead className="text-right">Revenue</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {shawarmaItemStats.map((s) => (
+                  <TableRow key={`${s.productName}__${s.variantLabel}`}>
+                    <TableCell className="font-medium">
+                      {s.productName}
+                    </TableCell>
+                    <TableCell>
+                      <SizeBadge size={s.variantLabel} />
+                    </TableCell>
+                    <TableCell className="text-right font-semibold">
+                      {s.qty}
+                    </TableCell>
+                    <TableCell className="text-right text-muted-foreground">
+                      {formatMoney(s.revenueGhs)}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        )}
       </div>
 
       {/* Recent Orders */}

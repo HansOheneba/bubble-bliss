@@ -24,6 +24,17 @@ export type SlimOrder = {
   status: string;
   branchName: string;
   cupsInOrder: number;
+  paymentMethod: string;
+  paymentStatus: string;
+};
+
+export type SlimShawarmaItem = {
+  createdAt: string;
+  branchName: string;
+  productName: string;
+  variantLabel: string;
+  qty: number;
+  revenueGhs: number;
 };
 
 export type BranchStat = {
@@ -139,8 +150,28 @@ async function fetchAnalyticsData() {
       status: o.status ?? "pending",
       branchName: o.branch?.name ?? "Unknown",
       cupsInOrder,
+      paymentMethod: o.payment_method ?? "hubtel",
+      paymentStatus: o.payment_status ?? "pending",
     };
   });
+
+  // ── Shawarma item slim data for client-side range + branch filtering ─────
+  const slimShawarmaItems: SlimShawarmaItem[] = [];
+  for (const o of orders) {
+    if (o.status === "cancelled") continue;
+    for (const item of o.items) {
+      if (item.product_id !== null && shawarmaProductIds.has(item.product_id)) {
+        slimShawarmaItems.push({
+          createdAt: o.created_at ?? new Date().toISOString(),
+          branchName: o.branch?.name ?? "Unknown",
+          productName: item.product_name,
+          variantLabel: item.variant_label ?? "Regular",
+          qty: item.quantity,
+          revenueGhs: (item.unit_pesewas * item.quantity) / 100,
+        });
+      }
+    }
+  }
 
   // ── Revenue + orders by branch ───────────────────────────────────────────
   const branchMap = new Map<string, { orders: number; revenueGhs: number }>();
@@ -399,6 +430,7 @@ async function fetchAnalyticsData() {
 
   return {
     slimOrders,
+    slimShawarmaItems,
     branchStats,
     topProducts,
     topToppings,

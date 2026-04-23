@@ -48,6 +48,7 @@ import {
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import type {
   SlimOrder,
+  SlimShawarmaItem,
   BranchStat,
   ProductStat,
   ToppingStat,
@@ -59,6 +60,7 @@ import type {
 
 type Props = {
   slimOrders: SlimOrder[];
+  slimShawarmaItems: SlimShawarmaItem[];
   branchStats: BranchStat[];
   topProducts: ProductStat[];
   topToppings: ToppingStat[];
@@ -81,6 +83,33 @@ const CHART_COLORS = [
   "var(--color-chart-5)",
 ];
 
+function paymentLabel(method: string) {
+  const map: Record<string, string> = {
+    cash: "Cash",
+    hubtel: "Hubtel",
+    momo: "Mobile Money",
+  };
+  return (
+    map[method.toLowerCase()] ??
+    method.charAt(0).toUpperCase() + method.slice(1)
+  );
+}
+
+function SizeBadge({ size }: { size: string }) {
+  const lower = size.toLowerCase();
+  const styles =
+    lower === "large"
+      ? "bg-orange-100 text-orange-800 dark:bg-orange-950/50 dark:text-orange-400 dark:border dark:border-orange-800/50"
+      : lower === "medium"
+        ? "bg-blue-100 text-blue-800 dark:bg-blue-950/50 dark:text-blue-400 dark:border dark:border-blue-800/50"
+        : "bg-muted text-muted-foreground";
+  return (
+    <Badge className={styles} variant="default">
+      {size}
+    </Badge>
+  );
+}
+
 function formatMoney(value: number) {
   return new Intl.NumberFormat("en-GH", {
     style: "currency",
@@ -91,6 +120,7 @@ function formatMoney(value: number) {
 
 export default function AnalyticsClient({
   slimOrders,
+  slimShawarmaItems,
   branchStats,
   topProducts,
   topToppings,
@@ -121,7 +151,7 @@ export default function AnalyticsClient({
   }
 
   const [range, setRange] = React.useState<RangeKey>(
-    (searchParams.get("range") as RangeKey) ?? "7d",
+    (searchParams.get("range") as RangeKey) ?? "today",
   );
   const [selectedBranch, setSelectedBranch] = React.useState<string>(
     searchParams.get("branch") ?? "all",
@@ -178,6 +208,68 @@ export default function AnalyticsClient({
     (o) => o.status === "completed",
   ).length;
 
+  // ── Payment breakdown (range + branch filtered, paid only) ──────────────
+  const paymentBreakdown = (() => {
+    const map = new Map<string, { count: number; revenueGhs: number }>();
+    for (const o of rangeActiveOrders.filter(
+      (o) => o.paymentStatus === "paid",
+    )) {
+      const cur = map.get(o.paymentMethod) ?? { count: 0, revenueGhs: 0 };
+      cur.count += 1;
+      cur.revenueGhs += o.totalGhs;
+      map.set(o.paymentMethod, cur);
+    }
+    return [...map.entries()]
+      .map(([method, s]) => ({ method, ...s }))
+      .sort((a, b) => b.revenueGhs - a.revenueGhs);
+  })();
+  const totalPaidRevenueGhs = paymentBreakdown.reduce(
+    (acc, p) => acc + p.revenueGhs,
+    0,
+  );
+
+  // ── Shawarma analytics (range + branch filtered) ─────────────────────────
+  const activeShawarmaItems =
+    selectedBranch === "all"
+      ? slimShawarmaItems
+      : slimShawarmaItems.filter((s) => s.branchName === selectedBranch);
+  const rangeShawarmaItems = activeShawarmaItems.filter(
+    (s) => new Date(s.createdAt) >= cutoff,
+  );
+  const shawarmaStatMap = new Map<
+    string,
+    {
+      productName: string;
+      variantLabel: string;
+      qty: number;
+      revenueGhs: number;
+    }
+  >();
+  for (const s of rangeShawarmaItems) {
+    const key = `${s.productName}__${s.variantLabel}`;
+    const cur = shawarmaStatMap.get(key) ?? {
+      productName: s.productName,
+      variantLabel: s.variantLabel,
+      qty: 0,
+      revenueGhs: 0,
+    };
+    cur.qty += s.qty;
+    cur.revenueGhs += s.revenueGhs;
+    shawarmaStatMap.set(key, cur);
+  }
+  const shawarmaItemStats = [...shawarmaStatMap.values()].sort(
+    (a, b) => b.qty - a.qty,
+  );
+  const shawarmaBySize: Record<string, number> = {};
+  for (const s of shawarmaItemStats) {
+    shawarmaBySize[s.variantLabel] =
+      (shawarmaBySize[s.variantLabel] ?? 0) + s.qty;
+  }
+  const totalShawarmasSold = shawarmaItemStats.reduce(
+    (acc, s) => acc + s.qty,
+    0,
+  );
+
   // ── Range time series ───────────────────────────────────────────────────
   const rangeSeries = buildRangeSeries(range, activeOrders, now, {
     getDate: (o) => new Date(o.createdAt),
@@ -212,6 +304,7 @@ export default function AnalyticsClient({
     },
     {} as Record<string, { label: string; color: string }>,
   );
+  void paymentConfig;
   const sourceConfig = activeSourceStats.reduce(
     (acc, s, i) => {
       acc[s.source] = {
@@ -228,6 +321,7 @@ export default function AnalyticsClient({
     value: s.count,
     fill: CHART_COLORS[i % CHART_COLORS.length],
   }));
+  void paymentPieData;
   const sourcePieData = activeSourceStats.map((s, i) => ({
     name: s.source,
     value: s.count,
@@ -244,8 +338,8 @@ export default function AnalyticsClient({
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
             {selectedBranch === "all"
-              ? "All-time performance across branches, products, and tellers."
-              : `Showing data for ${selectedBranch} only.`}
+              ? `Showing ${getDisplayLabel(range)} across all branches.`
+              : `Showing ${getDisplayLabel(range)} for ${selectedBranch} only.`}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
@@ -274,7 +368,7 @@ export default function AnalyticsClient({
             value={range}
             onValueChange={(v) => {
               setRange(v);
-              syncToUrl({ range: v === "7d" ? null : v });
+              syncToUrl({ range: v === "today" ? null : v });
             }}
           />
         </div>
@@ -330,7 +424,7 @@ export default function AnalyticsClient({
             {cupsInRange}
           </p>
           <p className="mt-1 text-xs text-muted-foreground">
-            Drink cups, completed orders
+            {getDisplayLabel(range)}
           </p>
         </div>
       </div>
@@ -502,38 +596,50 @@ export default function AnalyticsClient({
           )}
         </div>
 
-        {/* Payment + Source pies stacked */}
+        {/* Payment breakdown + Source pie stacked */}
         <div className="flex flex-col gap-4">
           <div className="rounded-lg border bg-card p-6 flex-1">
-            <p className="text-sm font-semibold text-foreground mb-3">
-              Payment methods
+            <p className="text-sm font-semibold text-foreground mb-1">
+              Revenue by payment
             </p>
-            {paymentPieData.length === 0 ? (
+            <p className="text-xs text-muted-foreground mb-3">
+              {getDisplayLabel(range)}, paid orders only
+            </p>
+            {paymentBreakdown.length === 0 ? (
               <p className="text-xs text-muted-foreground text-center py-4">
-                No data.
+                No paid orders.
               </p>
             ) : (
-              <ChartContainer config={paymentConfig} className="h-32 w-full">
-                <PieChart>
-                  <Pie
-                    data={paymentPieData}
-                    dataKey="value"
-                    nameKey="name"
-                    cx="50%"
-                    cy="50%"
-                    outerRadius={50}
-                    label={({ name, percent }) =>
-                      `${name as string} ${((percent as number) * 100).toFixed(0)}%`
-                    }
-                    labelLine={false}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between text-xs font-medium text-muted-foreground border-b pb-1 mb-1">
+                  <span>Method</span>
+                  <span>Revenue / Orders</span>
+                </div>
+                {paymentBreakdown.map((p) => (
+                  <div
+                    key={p.method}
+                    className="flex items-center justify-between text-sm"
                   >
-                    {paymentPieData.map((entry) => (
-                      <Cell key={entry.name} fill={entry.fill} />
-                    ))}
-                  </Pie>
-                  <ChartTooltip content={<ChartTooltipContent />} />
-                </PieChart>
-              </ChartContainer>
+                    <span className="text-muted-foreground">
+                      {paymentLabel(p.method)}
+                    </span>
+                    <div className="text-right">
+                      <span className="font-semibold text-foreground">
+                        {formatMoney(p.revenueGhs)}
+                      </span>
+                      <span className="ml-1.5 text-xs text-muted-foreground">
+                        ({p.count})
+                      </span>
+                    </div>
+                  </div>
+                ))}
+                <div className="flex items-center justify-between text-sm border-t pt-2 mt-1">
+                  <span className="font-medium text-foreground">Total</span>
+                  <span className="font-bold text-foreground">
+                    {formatMoney(totalPaidRevenueGhs)}
+                  </span>
+                </div>
+              </div>
             )}
           </div>
           <div className="rounded-lg border bg-card p-6 flex-1">
@@ -668,6 +774,80 @@ export default function AnalyticsClient({
             </ChartContainer>
           )}
         </div>
+      </div>
+
+      {/* Shawarma Sales */}
+      <div className="rounded-lg border bg-card p-4 sm:p-6">
+        <div className="mb-4 flex items-center justify-between">
+          <div>
+            <p className="text-base font-semibold text-foreground">
+              Shawarma Sales
+            </p>
+            <p className="text-sm text-muted-foreground">
+              Breakdown by product and size &mdash; {getDisplayLabel(range)}
+              {selectedBranch !== "all" ? ` · ${selectedBranch}` : ""}
+            </p>
+          </div>
+          <div className="text-right">
+            <div className="text-xs text-muted-foreground">Total sold</div>
+            <div className="text-lg font-bold text-foreground">
+              {totalShawarmasSold}
+            </div>
+          </div>
+        </div>
+
+        {Object.keys(shawarmaBySize).length > 0 && (
+          <div className="mb-4 flex flex-wrap gap-2">
+            {Object.entries(shawarmaBySize)
+              .sort((a, b) => b[1] - a[1])
+              .map(([size, qty]) => (
+                <div
+                  key={size}
+                  className="flex items-center gap-1.5 rounded-full border bg-muted px-3 py-1 text-xs"
+                >
+                  <span className="font-medium text-foreground">{size}:</span>
+                  <span className="font-bold text-foreground">{qty}</span>
+                </div>
+              ))}
+          </div>
+        )}
+
+        {shawarmaItemStats.length === 0 ? (
+          <p className="py-4 text-center text-sm text-muted-foreground">
+            No shawarma orders for {getDisplayLabel(range).toLowerCase()}.
+          </p>
+        ) : (
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Product</TableHead>
+                  <TableHead>Size</TableHead>
+                  <TableHead className="text-right">Qty</TableHead>
+                  <TableHead className="text-right">Revenue</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {shawarmaItemStats.map((s) => (
+                  <TableRow key={`${s.productName}__${s.variantLabel}`}>
+                    <TableCell className="font-medium">
+                      {s.productName}
+                    </TableCell>
+                    <TableCell>
+                      <SizeBadge size={s.variantLabel} />
+                    </TableCell>
+                    <TableCell className="text-right font-semibold">
+                      {s.qty}
+                    </TableCell>
+                    <TableCell className="text-right text-muted-foreground">
+                      {formatMoney(s.revenueGhs)}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        )}
       </div>
 
       {/* Teller analytics */}
