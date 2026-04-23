@@ -30,6 +30,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import Link from "next/link";
 import RangeSelect from "@/components/admin/range-select";
 import {
   buildRangeSeries,
@@ -139,6 +141,16 @@ export default function DashboardClient({ orders, products, toppings }: Props) {
       (o.created_at ? new Date(o.created_at) >= todayStart : false),
   );
 
+  const todayOrders = orders.filter(
+    (o) =>
+      o.status !== "cancelled" &&
+      (o.created_at ? new Date(o.created_at) >= todayStart : false),
+  );
+  const cupsToday = todayOrders.reduce(
+    (acc, o) => acc + o.items.reduce((s, item) => s + (item.quantity ?? 0), 0),
+    0,
+  );
+
   const deliveredOrders = rangeOrders.filter((o) => o.status === "delivered");
   const revenueDelivered = deliveredOrders.reduce(
     (acc, o) => acc + pesewasToGhs(o.total_pesewas),
@@ -162,7 +174,7 @@ export default function DashboardClient({ orders, products, toppings }: Props) {
   const recentOrders = orders.slice(0, 10);
 
   const rangeSeries = buildRangeSeries(range, orders, now, {
-    getDate: (o) => new Date(o.created_at ?? Date.now()),
+    getDate: (o) => new Date(o.created_at ?? now),
     getRevenue: (o) =>
       o.status === "delivered" ? pesewasToGhs(o.total_pesewas) : 0,
   });
@@ -230,18 +242,18 @@ export default function DashboardClient({ orders, products, toppings }: Props) {
 
   return (
     <div className="space-y-8">
-      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight text-foreground">
+          <h1 className="text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
             Dashboard
           </h1>
-          <p className="text-muted-foreground">
+          <p className="text-sm text-muted-foreground">
             Welcome to BubbleBliss Cafe Admin. Manage your orders, products, and
             operations.
           </p>
         </div>
-        <div className="flex items-center gap-3 text-xs text-muted-foreground">
-          <span>Time range</span>
+        <div className="flex flex-wrap items-center gap-3">
+          <span className="text-xs text-muted-foreground">Time range</span>
           <RangeSelect
             value={range}
             onValueChange={(v) => {
@@ -249,49 +261,63 @@ export default function DashboardClient({ orders, products, toppings }: Props) {
               syncToUrl({ range: v === "7d" ? null : v });
             }}
           />
+          <Button asChild variant="outline" size="sm">
+            <Link href="/admin/analytics">View Analytics</Link>
+          </Button>
         </div>
       </div>
 
       {/* Top KPI Cards */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <div className="rounded-lg border bg-card p-6">
-          <div className="text-sm font-medium text-muted-foreground">
+      <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3 lg:grid-cols-5">
+        <div className="rounded-lg border bg-card p-4 sm:p-6">
+          <div className="text-xs font-medium text-muted-foreground sm:text-sm">
             Orders
           </div>
-          <div className="mt-2 text-3xl font-bold text-foreground">
+          <div className="mt-2 text-2xl font-bold text-foreground sm:text-3xl">
             {rangeOrders.length}
           </div>
           <div className="mt-1 text-xs text-muted-foreground">
             Revenue: {formatMoney(rangeRevenuePaid)}
           </div>
         </div>
-        <div className="rounded-lg border bg-card p-6">
-          <div className="text-sm font-medium text-muted-foreground">
+        <div className="rounded-lg border bg-card p-4 sm:p-6">
+          <div className="text-xs font-medium text-muted-foreground sm:text-sm">
             Open Orders Today
           </div>
-          <div className="mt-2 text-3xl font-bold text-foreground">
+          <div className="mt-2 text-2xl font-bold text-foreground sm:text-3xl">
             {openOrders.length}
           </div>
           <div className="mt-1 text-xs text-muted-foreground">
             Pending + Preparing
           </div>
         </div>
-        <div className="rounded-lg border bg-card p-6">
-          <div className="text-sm font-medium text-muted-foreground">
+        <div className="rounded-lg border bg-card p-4 sm:p-6">
+          <div className="text-xs font-medium text-muted-foreground sm:text-sm">
+            Cups Today
+          </div>
+          <div className="mt-2 text-2xl font-bold text-foreground sm:text-3xl">
+            {cupsToday}
+          </div>
+          <div className="mt-1 text-xs text-muted-foreground">
+            Items across {todayOrders.length} orders
+          </div>
+        </div>
+        <div className="rounded-lg border bg-card p-4 sm:p-6">
+          <div className="text-xs font-medium text-muted-foreground sm:text-sm">
             Active Products
           </div>
-          <div className="mt-2 text-3xl font-bold text-foreground">
+          <div className="mt-2 text-2xl font-bold text-foreground sm:text-3xl">
             {activeProducts.length}
           </div>
           <div className="mt-1 text-xs text-muted-foreground">
             {outOfStockProducts.length} out of stock
           </div>
         </div>
-        <div className="rounded-lg border bg-card p-6">
-          <div className="text-sm font-medium text-muted-foreground">
+        <div className="col-span-2 rounded-lg border bg-card p-4 sm:col-span-1 sm:p-6">
+          <div className="text-xs font-medium text-muted-foreground sm:text-sm">
             Completed
           </div>
-          <div className="mt-2 text-3xl font-bold text-foreground">
+          <div className="mt-2 text-2xl font-bold text-foreground sm:text-3xl">
             {deliveredOrders.length}
           </div>
           <div className="mt-1 text-xs text-muted-foreground">
@@ -446,39 +472,39 @@ export default function DashboardClient({ orders, products, toppings }: Props) {
       </div>
 
       {/* Secondary KPI + Branch breakdown */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <div className="rounded-lg border bg-card p-6">
-          <div className="text-sm font-medium text-muted-foreground">
+      <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
+        <div className="rounded-lg border bg-card p-4 sm:p-6">
+          <div className="text-xs font-medium text-muted-foreground sm:text-sm">
             Total Revenue
           </div>
-          <div className="mt-2 text-3xl font-bold text-foreground">
+          <div className="mt-2 text-2xl font-bold text-foreground sm:text-3xl">
             {formatMoney(revenueDelivered)}
           </div>
           <div className="mt-1 text-xs text-muted-foreground">
             From {deliveredOrders.length} delivered orders
           </div>
         </div>
-        <div className="rounded-lg border bg-card p-6">
-          <div className="text-sm font-medium text-muted-foreground">
+        <div className="rounded-lg border bg-card p-4 sm:p-6">
+          <div className="text-xs font-medium text-muted-foreground sm:text-sm">
             Avg Order Value
           </div>
-          <div className="mt-2 text-3xl font-bold text-foreground">
+          <div className="mt-2 text-2xl font-bold text-foreground sm:text-3xl">
             {formatMoney(avgOrderValue)}
           </div>
         </div>
-        <div className="rounded-lg border bg-card p-6">
-          <div className="text-sm font-medium text-muted-foreground">
+        <div className="rounded-lg border bg-card p-4 sm:p-6">
+          <div className="text-xs font-medium text-muted-foreground sm:text-sm">
             Out of Stock
           </div>
-          <div className="mt-2 text-3xl font-bold text-foreground">
+          <div className="mt-2 text-2xl font-bold text-foreground sm:text-3xl">
             {outOfStockProducts.length}
           </div>
           <div className="mt-1 text-xs text-muted-foreground">
             {outOfStockToppings.length} toppings also out
           </div>
         </div>
-        <div className="rounded-lg border bg-card p-6">
-          <div className="text-sm font-medium text-muted-foreground">
+        <div className="col-span-2 rounded-lg border bg-card p-4 sm:col-span-1 sm:p-6 lg:col-span-1">
+          <div className="text-xs font-medium text-muted-foreground sm:text-sm">
             Orders by Branch
           </div>
           <div className="mt-2 space-y-1">
@@ -496,56 +522,63 @@ export default function DashboardClient({ orders, products, toppings }: Props) {
       </div>
 
       {/* Recent Orders */}
-      <div className="rounded-lg border bg-card p-6">
-        <div className="mb-4">
-          <div className="text-base font-semibold text-foreground">
-            Recent Orders
+      <div className="rounded-lg border bg-card p-4 sm:p-6">
+        <div className="mb-4 flex items-center justify-between">
+          <div>
+            <div className="text-base font-semibold text-foreground">
+              Recent Orders
+            </div>
+            <div className="text-sm text-muted-foreground">
+              Latest 10 orders across all branches.
+            </div>
           </div>
-          <div className="text-sm text-muted-foreground">
-            Latest 10 orders across all branches.
-          </div>
+          <Button asChild variant="outline" size="sm">
+            <Link href="/admin/orders">See all</Link>
+          </Button>
         </div>
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Order #</TableHead>
-              <TableHead>Customer</TableHead>
-              <TableHead>Branch</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead className="text-right">Total</TableHead>
-              <TableHead>Date</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {recentOrders.map((order) => (
-              <TableRow key={order.id}>
-                <TableCell className="font-medium font-mono text-xs">
-                  {order.order_number ?? `#${order.id}`}
-                </TableCell>
-                <TableCell>{order.customer_name ?? order.phone}</TableCell>
-                <TableCell className="text-muted-foreground">
-                  {order.branch?.name ?? "—"}
-                </TableCell>
-                <TableCell>
-                  <StatusBadge status={order.status ?? "pending"} />
-                </TableCell>
-                <TableCell className="text-right">
-                  {formatMoney(pesewasToGhs(order.total_pesewas))}
-                </TableCell>
-                <TableCell className="text-muted-foreground text-xs">
-                  {order.created_at
-                    ? new Date(order.created_at).toLocaleDateString("en-GH", {
-                        month: "short",
-                        day: "numeric",
-                        hour: "2-digit",
-                        minute: "2-digit",
-                      })
-                    : "—"}
-                </TableCell>
+        <div className="overflow-x-auto">
+          <Table className="min-w-140">
+            <TableHeader>
+              <TableRow>
+                <TableHead>Order #</TableHead>
+                <TableHead>Customer</TableHead>
+                <TableHead>Branch</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead className="text-right">Total</TableHead>
+                <TableHead>Date</TableHead>
               </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+            </TableHeader>
+            <TableBody>
+              {recentOrders.map((order) => (
+                <TableRow key={order.id}>
+                  <TableCell className="font-medium font-mono text-xs">
+                    {order.order_number ?? `#${order.id}`}
+                  </TableCell>
+                  <TableCell>{order.customer_name ?? order.phone}</TableCell>
+                  <TableCell className="text-muted-foreground">
+                    {order.branch?.name ?? "—"}
+                  </TableCell>
+                  <TableCell>
+                    <StatusBadge status={order.status ?? "pending"} />
+                  </TableCell>
+                  <TableCell className="text-right">
+                    {formatMoney(pesewasToGhs(order.total_pesewas))}
+                  </TableCell>
+                  <TableCell className="text-muted-foreground text-xs">
+                    {order.created_at
+                      ? new Date(order.created_at).toLocaleDateString("en-GH", {
+                          month: "short",
+                          day: "numeric",
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })
+                      : "—"}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
       </div>
     </div>
   );
