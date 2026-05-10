@@ -161,7 +161,7 @@ export type Database = {
       orders: {
         Row: {
           id: number;
-          phone: string;
+          phone: string | null;
           customer_name: string | null;
           location_text: string;
           notes: string | null;
@@ -179,7 +179,7 @@ export type Database = {
           teller_id: number | null;
         };
         Insert: {
-          phone: string;
+          phone?: string | null;
           customer_name?: string | null;
           location_text: string;
           notes?: string | null;

@@ -31,7 +31,7 @@ type OrderSource = "online" | "instore";
 //  1. POS mode:    provide pos_user_email — branch + orderSource derived server-side
 //  2. Online mode: provide branchSlug + optional orderSource
 type CheckoutBody = {
-  phone: string;
+  phone?: string | null;
   locationText: string;
   pos_user_email?: string;
   branchSlug?: string;
@@ -90,10 +90,6 @@ export async function POST(req: NextRequest) {
 
   // ── Basic validation ──────────────────────────────────────────────────────
 
-  if (!phone || typeof phone !== "string") {
-    return NextResponse.json({ message: "phone is required" }, { status: 400 });
-  }
-
   if (!locationText || typeof locationText !== "string") {
     return NextResponse.json(
       { message: "locationText is required" },
@@ -131,12 +127,15 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const normalisedPhone = normalisePhone(phone);
-  if (!/^233\d{9}$/.test(normalisedPhone)) {
-    return NextResponse.json(
-      { message: "Invalid phone number — expected 10-digit Ghanaian number" },
-      { status: 400 },
-    );
+  let normalisedPhone: string | null = null;
+  if (phone) {
+    normalisedPhone = normalisePhone(phone);
+    if (!/^233\d{9}$/.test(normalisedPhone)) {
+      return NextResponse.json(
+        { message: "Invalid phone number — expected 10-digit Ghanaian number" },
+        { status: 400 },
+      );
+    }
   }
 
   const db = createAdminClient();
@@ -420,7 +419,7 @@ export async function POST(req: NextRequest) {
   const { data: orderData, error: orderError } = await db
     .from("orders")
     .insert({
-      phone: normalisedPhone,
+      phone: normalisedPhone ?? null,
       customer_name: payeeName ?? null,
       location_text: locationText,
       notes: notes ?? null,
