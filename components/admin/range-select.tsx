@@ -37,7 +37,7 @@ export default function DateSelect({ value, onValueChange }: DateSelectProps) {
       <PopoverTrigger asChild>
         <Button
           variant="outline"
-          className="h-8 justify-between gap-2 px-3 text-sm font-normal"
+          className="h-8 justify-between gap-2 px-3 text-sm font-normal text-white hover:text-white/80"
         >
           {format(selected, "MMM d, yyyy")}
           <ChevronDownIcon className="h-4 w-4 opacity-50" />
