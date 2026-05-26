@@ -21,7 +21,7 @@ import {
   ChartTooltip,
   ChartTooltipContent,
 } from "@/components/ui/chart";
-import RangeSelect from "@/components/admin/range-select";
+import DateSelect from "@/components/admin/range-select";
 
 import {
   Table,
@@ -41,11 +41,10 @@ import {
   formatMoney,
 } from "@/lib/customers";
 import {
-  buildRangeSeries,
-  getDisplayLabel,
-  getRangeTickStep,
+  buildDaySeries,
+  ghanaToday,
+  formatDateKey,
   sparseTickLabel,
-  type RangeKey,
 } from "@/lib/range-metrics";
 
 function sumAdminOrderTotal(order: (typeof ADMIN_ORDERS)[number]) {
@@ -53,7 +52,7 @@ function sumAdminOrderTotal(order: (typeof ADMIN_ORDERS)[number]) {
 }
 
 export default function ReportsPage() {
-  const [range, setRange] = React.useState<RangeKey>("30d");
+  const [selectedDate, setSelectedDate] = React.useState<string>(ghanaToday());
   const completedOrders = ADMIN_ORDERS.filter((o) => o.status === "Done");
   const pendingOrders = ADMIN_ORDERS.filter((o) => o.status === "Pending");
   const preparingOrders = ADMIN_ORDERS.filter((o) => o.status === "Preparing");
@@ -78,10 +77,10 @@ export default function ReportsPage() {
     .sort((a, b) => b.qty - a.qty)
     .slice(0, 6);
 
-  const now = new Date();
-  const rangeSeries = buildRangeSeries(range, ADMIN_ORDERS, now, {
-    getDate: (order) => new Date(order.createdAt),
-    getRevenue: (order) =>
+  const rangeSeries = buildDaySeries(selectedDate, ADMIN_ORDERS, {
+    getDate: (order: (typeof ADMIN_ORDERS)[number]) =>
+      new Date(order.createdAt),
+    getRevenue: (order: (typeof ADMIN_ORDERS)[number]) =>
       order.status === "Done" ? sumAdminOrderTotal(order) : 0,
   });
   const revenueByDay = rangeSeries.map((d) => ({
@@ -100,7 +99,7 @@ export default function ReportsPage() {
   const orderValues = ordersByDay14.map((d) => d.orders);
   const maxRevenue = Math.max(...revenueValues, 1);
   const maxOrders = Math.max(...orderValues, 1);
-  const tickStep = getRangeTickStep(range);
+  const tickStep = 3;
 
   const revenueChartConfig = {
     revenue: {
@@ -205,8 +204,8 @@ export default function ReportsPage() {
           </p>
         </div>
         <div className="flex items-center gap-3 text-xs text-muted-foreground">
-          <span>Time range</span>
-          <RangeSelect value={range} onValueChange={setRange} />
+          <span>Date</span>
+          <DateSelect value={selectedDate} onValueChange={setSelectedDate} />
         </div>
       </div>
 
@@ -254,7 +253,7 @@ export default function ReportsPage() {
           <div className="flex items-center justify-between">
             <div>
               <div className="text-sm font-medium text-muted-foreground">
-                Revenue trend ({getDisplayLabel(range)})
+                Revenue trend ({formatDateKey(selectedDate)})
               </div>
               <div className="text-xs text-muted-foreground">
                 Completed order revenue per day.
@@ -311,7 +310,7 @@ export default function ReportsPage() {
           <div className="flex items-center justify-between">
             <div>
               <div className="text-sm font-medium text-muted-foreground">
-                Order volume ({getDisplayLabel(range)})
+                Order volume ({formatDateKey(selectedDate)})
               </div>
               <div className="text-xs text-muted-foreground">
                 All order statuses combined.
@@ -357,7 +356,7 @@ export default function ReportsPage() {
       <div className="grid gap-4 lg:grid-cols-3">
         <div className="rounded-lg border bg-card p-5">
           <div className="text-sm font-medium text-muted-foreground">
-            Avg order value ({getDisplayLabel(range)})
+            Avg order value ({formatDateKey(selectedDate)})
           </div>
           <div className="mt-4">
             <ChartContainer

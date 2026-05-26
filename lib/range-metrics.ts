@@ -1,206 +1,106 @@
-export type RangeKey = "today" | "24h" | "7d" | "30d" | "6m";
+// Ghana uses UTC+0 (GMT) year-round with no daylight saving.
+// All date math here uses UTC, which is identical to Ghana local time.
+// A DateKey is a "YYYY-MM-DD" string representing a calendar day in Ghana.
 
-type RangeGranularity = "hour" | "day" | "month";
+export type DateKey = string;
 
-type RangeMeta = {
-  granularity: RangeGranularity;
-  points: number;
-  tickStep: number;
-};
-
-export const RANGE_OPTIONS: { value: RangeKey; label: string }[] = [
-  { value: "today", label: "Today" },
-  { value: "24h", label: "24h" },
-  { value: "7d", label: "7d" },
-  { value: "30d", label: "30d" },
-  { value: "6m", label: "6m" },
-];
-
-const RANGE_META: Record<RangeKey, RangeMeta> = {
-  today: { granularity: "hour", points: 24, tickStep: 3 },
-  "24h": { granularity: "hour", points: 24, tickStep: 3 },
-  "7d": { granularity: "day", points: 7, tickStep: 2 },
-  "30d": { granularity: "day", points: 30, tickStep: 5 },
-  "6m": { granularity: "month", points: 6, tickStep: 1 },
-};
-
-type RangeBucket = {
-  key: string;
-  label: string;
-};
-
-type RangePoint = {
-  label: string;
-  revenue: number;
-  orders: number;
-};
-
-function pad2(value: number) {
-  return value.toString().padStart(2, "0");
+function pad2(n: number) {
+  return n.toString().padStart(2, "0");
 }
 
-export function formatShortDate(iso: string) {
-  return new Date(iso).toLocaleDateString("en-GH", {
+/** Returns today's date as "YYYY-MM-DD" in Ghana time (UTC+0). */
+export function ghanaToday(): DateKey {
+  const now = new Date();
+  return `${now.getUTCFullYear()}-${pad2(now.getUTCMonth() + 1)}-${pad2(now.getUTCDate())}`;
+}
+
+/** Formats a "YYYY-MM-DD" key as a short human-readable label. */
+export function formatDateKey(dateKey: DateKey): string {
+  const now = new Date();
+  const today = ghanaToday();
+  const yUTC = new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - 1),
+  );
+  const yesterday = `${yUTC.getUTCFullYear()}-${pad2(yUTC.getUTCMonth() + 1)}-${pad2(yUTC.getUTCDate())}`;
+  if (dateKey === today) return "Today";
+  if (dateKey === yesterday) return "Yesterday";
+  const [year, month, day] = dateKey.split("-").map(Number);
+  const d = new Date(Date.UTC(year, month - 1, day));
+  return d.toLocaleDateString("en-GH", {
+    timeZone: "UTC",
+    weekday: "short",
     month: "short",
     day: "numeric",
   });
 }
 
-function formatMonthLabel(date: Date) {
-  return date.toLocaleDateString("en-GH", {
-    month: "short",
-    year: "2-digit",
-  });
+/** Returns the [start, end) Date bounds in UTC for a Ghana calendar day. */
+export function getDayBoundsUtc(dateKey: DateKey): [Date, Date] {
+  const [year, month, day] = dateKey.split("-").map(Number);
+  const start = new Date(Date.UTC(year, month - 1, day, 0, 0, 0, 0));
+  const end = new Date(Date.UTC(year, month - 1, day + 1, 0, 0, 0, 0));
+  return [start, end];
 }
 
-function getBucketKey(date: Date, granularity: RangeGranularity) {
-  const year = date.getFullYear();
-  const month = pad2(date.getMonth() + 1);
-  if (granularity === "month") {
-    return `${year}-${month}`;
-  }
-  const day = pad2(date.getDate());
-  if (granularity === "day") {
-    return `${year}-${month}-${day}`;
-  }
-  const hour = pad2(date.getHours());
-  return `${year}-${month}-${day}-${hour}`;
+/** Returns the [start, end) Date bounds in UTC for a whole calendar month. */
+export function getMonthBoundsUtc(yearMonth: string): [Date, Date] {
+  const [year, month] = yearMonth.split("-").map(Number);
+  const start = new Date(Date.UTC(year, month - 1, 1, 0, 0, 0, 0));
+  const end = new Date(Date.UTC(year, month, 1, 0, 0, 0, 0));
+  return [start, end];
 }
 
-function getRangeBuckets(range: RangeKey, now: Date) {
-  // "today" — hourly buckets from midnight to current hour
-  if (range === "today") {
-    const midnight = new Date(now);
-    midnight.setHours(0, 0, 0, 0);
-    const currentHour = now.getHours();
-    const buckets: RangeBucket[] = [];
-    for (let h = 0; h <= currentHour; h++) {
-      const d = new Date(midnight);
-      d.setHours(h);
-      buckets.push({
-        key: getBucketKey(d, "hour"),
-        label: d.toLocaleTimeString("en-GH", { hour: "numeric" }),
-      });
-    }
-    return { buckets, granularity: "hour" as RangeGranularity };
-  }
+type DaySeriesPoint = {
+  label: string;
+  revenue: number;
+  orders: number;
+};
 
-  const { granularity, points } = RANGE_META[range];
-  const buckets: RangeBucket[] = [];
-
-  for (let i = points - 1; i >= 0; i -= 1) {
-    const d = new Date(now);
-
-    if (granularity === "hour") {
-      d.setMinutes(0, 0, 0);
-      d.setHours(d.getHours() - i);
-      buckets.push({
-        key: getBucketKey(d, granularity),
-        label: d.toLocaleTimeString("en-GH", { hour: "numeric" }),
-      });
-      continue;
-    }
-
-    if (granularity === "day") {
-      d.setHours(0, 0, 0, 0);
-      d.setDate(d.getDate() - i);
-      buckets.push({
-        key: getBucketKey(d, granularity),
-        label: formatShortDate(d.toISOString()),
-      });
-      continue;
-    }
-
-    d.setDate(1);
-    d.setHours(0, 0, 0, 0);
-    d.setMonth(d.getMonth() - i);
-    buckets.push({
-      key: getBucketKey(d, granularity),
-      label: formatMonthLabel(d),
-    });
-  }
-
-  return { buckets, granularity };
-}
-
-export function buildRangeSeries<T>(
-  range: RangeKey,
+/**
+ * Builds hourly buckets (Ghana/UTC time) for the selected date.
+ * For today, only hours up to the current UTC hour are included.
+ */
+export function buildDaySeries<T>(
+  dateKey: DateKey,
   orders: T[],
-  now: Date,
   options: {
     getDate: (order: T) => Date;
     getRevenue: (order: T) => number;
   },
-) {
-  const { buckets, granularity } = getRangeBuckets(range, now);
-  const bucketMap = new Map(
-    buckets.map((b) => [b.key, { revenue: 0, orders: 0 }]),
-  );
+): DaySeriesPoint[] {
+  const [start, end] = getDayBoundsUtc(dateKey);
+  const isToday = dateKey === ghanaToday();
+  const maxHour = isToday ? new Date().getUTCHours() : 23;
 
-  for (const order of orders) {
-    const date = options.getDate(order);
-    const key = getBucketKey(date, granularity);
-    const bucket = bucketMap.get(key);
-    if (!bucket) {
-      continue;
-    }
-    bucket.orders += 1;
-    bucket.revenue += options.getRevenue(order);
+  const buckets: (DaySeriesPoint & { hour: number })[] = [];
+  for (let h = 0; h <= maxHour; h++) {
+    const hourDate = new Date(start.getTime() + h * 3_600_000);
+    const label = hourDate.toLocaleTimeString("en-GH", {
+      timeZone: "UTC",
+      hour: "numeric",
+    });
+    buckets.push({ hour: h, label, revenue: 0, orders: 0 });
   }
 
-  return buckets.map((b) => ({
-    label: b.label,
-    revenue: bucketMap.get(b.key)?.revenue ?? 0,
-    orders: bucketMap.get(b.key)?.orders ?? 0,
-  })) as RangePoint[];
-}
+  for (const order of orders) {
+    const d = options.getDate(order);
+    if (d >= start && d < end) {
+      const h = d.getUTCHours();
+      const bucket = buckets.find((b) => b.hour === h);
+      if (bucket) {
+        bucket.orders += 1;
+        bucket.revenue += options.getRevenue(order);
+      }
+    }
+  }
 
-export function getRangeLabel(range: RangeKey) {
-  return RANGE_OPTIONS.find((option) => option.value === range)?.label ?? range;
-}
-
-/** Returns the label with "Last " prefix, except for "today" which stands alone. */
-export function getDisplayLabel(range: RangeKey) {
-  const label = getRangeLabel(range);
-  return range === "today" ? label : `Last ${label}`;
-}
-
-export function getRangeTickStep(range: RangeKey) {
-  return RANGE_META[range].tickStep;
+  return buckets.map(({ label, revenue, orders }) => ({
+    label,
+    revenue,
+    orders,
+  }));
 }
 
 export function sparseTickLabel(value: string, index: number, step: number) {
   return index % step === 0 ? value : "";
-}
-
-// Returns the earliest Date that falls within the selected range window.
-// Use this to filter orders for KPI cards that should respond to the range.
-export function getRangeCutoff(range: RangeKey, now: Date): Date {
-  switch (range) {
-    case "today": {
-      const midnight = new Date(now);
-      midnight.setHours(0, 0, 0, 0);
-      return midnight;
-    }
-    case "24h": {
-      const d = new Date(now);
-      d.setHours(d.getHours() - 24);
-      return d;
-    }
-    case "7d": {
-      const d = new Date(now);
-      d.setDate(d.getDate() - 7);
-      return d;
-    }
-    case "30d": {
-      const d = new Date(now);
-      d.setDate(d.getDate() - 30);
-      return d;
-    }
-    case "6m": {
-      const d = new Date(now);
-      d.setMonth(d.getMonth() - 6);
-      return d;
-    }
-  }
 }

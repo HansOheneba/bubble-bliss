@@ -97,7 +97,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Non-fatal SMS
-    await sendSmsConfirmation(order.phone);
+    if (order.phone) await sendSmsConfirmation(order.phone);
   } else if (status === "failed") {
     const { error: updateError } = await db
       .from("orders")

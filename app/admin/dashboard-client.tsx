@@ -32,7 +32,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
-import RangeSelect from "@/components/admin/range-select";
+import DateSelect from "@/components/admin/range-select";
 import {
   Select,
   SelectContent,
@@ -41,13 +41,11 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
-  buildRangeSeries,
-  getRangeCutoff,
-  getRangeLabel,
-  getDisplayLabel,
-  getRangeTickStep,
+  buildDaySeries,
+  getDayBoundsUtc,
+  ghanaToday,
+  formatDateKey,
   sparseTickLabel,
-  type RangeKey,
 } from "@/lib/range-metrics";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import type { OrderWithItems } from "@/lib/database.types";
@@ -159,21 +157,21 @@ export default function DashboardClient({
     router.replace(`${pathname}?${params.toString()}`, { scroll: false });
   }
 
-  const [range, setRange] = React.useState<RangeKey>(
-    (searchParams.get("range") as RangeKey) ?? "today",
+  const [selectedDate, setSelectedDate] = React.useState<string>(
+    searchParams.get("date") ?? ghanaToday(),
   );
   const [selectedBranch, setSelectedBranch] = React.useState<string>(
     searchParams.get("branch") ?? "all",
   );
-  const now = new Date();
 
   const branches = [...new Set(orders.map((o) => o.branch?.name ?? "Unknown"))]
     .filter(Boolean)
     .sort();
 
-  const cutoff = getRangeCutoff(range, now);
+  const [dayStart, dayEnd] = getDayBoundsUtc(selectedDate);
   const rangeOrders = orders.filter((o) => {
-    const inRange = o.created_at ? new Date(o.created_at) >= cutoff : false;
+    const d = o.created_at ? new Date(o.created_at) : null;
+    const inRange = d !== null && d >= dayStart && d < dayEnd;
     const inBranch =
       selectedBranch === "all" ||
       (o.branch?.name ?? "Unknown") === selectedBranch;
@@ -183,7 +181,7 @@ export default function DashboardClient({
     .filter((o) => o.payment_status === "paid")
     .reduce((acc, o) => acc + pesewasToGhs(o.total_pesewas), 0);
 
-  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const [todayStart] = getDayBoundsUtc(ghanaToday());
   const openOrders = orders.filter(
     (o) =>
       (o.status === "pending" ||
@@ -285,8 +283,8 @@ export default function DashboardClient({
 
   const recentOrders = orders.slice(0, 10);
 
-  const rangeSeries = buildRangeSeries(range, orders, now, {
-    getDate: (o) => new Date(o.created_at ?? now),
+  const rangeSeries = buildDaySeries(selectedDate, orders, {
+    getDate: (o) => new Date(o.created_at ?? 0),
     getRevenue: (o) =>
       o.status === "delivered" ? pesewasToGhs(o.total_pesewas) : 0,
   });
@@ -302,7 +300,7 @@ export default function DashboardClient({
 
   const maxRevenue = Math.max(...revenueByDay.map((d) => d.revenue), 1);
   const maxOrders = Math.max(...ordersByDay.map((d) => d.orders), 1);
-  const tickStep = getRangeTickStep(range);
+  const tickStep = 3;
 
   const statusSegments = [
     {
@@ -361,9 +359,9 @@ export default function DashboardClient({
           <p className="text-sm text-muted-foreground">
             Welcome to BubbleBliss Cafe Admin. Metrics below are for{" "}
             <span className="font-medium text-foreground">
-              {getDisplayLabel(range)}
-            </span>
-            .
+              {formatDateKey(selectedDate)}
+            </span>{" "}
+            (Ghana time).
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
@@ -387,12 +385,12 @@ export default function DashboardClient({
               ))}
             </SelectContent>
           </Select>
-          <span className="text-xs text-muted-foreground">Range</span>
-          <RangeSelect
-            value={range}
+          <span className="text-xs text-muted-foreground">Date</span>
+          <DateSelect
+            value={selectedDate}
             onValueChange={(v) => {
-              setRange(v);
-              syncToUrl({ range: v === "today" ? null : v });
+              setSelectedDate(v);
+              syncToUrl({ date: v === ghanaToday() ? null : v });
             }}
           />
           <Button asChild variant="outline" size="sm">
@@ -433,7 +431,7 @@ export default function DashboardClient({
             {cupsInRange}
           </div>
           <div className="mt-1 text-xs text-muted-foreground">
-            {getDisplayLabel(range)}, completed orders
+            {formatDateKey(selectedDate)}, completed orders
           </div>
         </div>
         <div className="rounded-lg border bg-card p-4 sm:p-6">
@@ -455,7 +453,7 @@ export default function DashboardClient({
             {deliveredOrders.length}
           </div>
           <div className="mt-1 text-xs text-muted-foreground">
-            {getRangeLabel(range)}
+            {formatDateKey(selectedDate)}
           </div>
         </div>
       </div>
@@ -466,7 +464,7 @@ export default function DashboardClient({
           <div className="flex items-center justify-between">
             <div>
               <div className="text-base font-semibold text-foreground">
-                Revenue trend ({getDisplayLabel(range)})
+                Revenue trend ({formatDateKey(selectedDate)})
               </div>
               <div className="text-sm text-muted-foreground">
                 Delivered order revenue.
@@ -563,7 +561,7 @@ export default function DashboardClient({
         <div className="flex items-center justify-between">
           <div>
             <div className="text-base font-semibold text-foreground">
-              Orders volume ({getDisplayLabel(range)})
+              Orders volume ({formatDateKey(selectedDate)})
             </div>
             <div className="text-sm text-muted-foreground">
               Daily order count across all statuses.
@@ -681,7 +679,7 @@ export default function DashboardClient({
               Shawarma Sales
             </div>
             <div className="text-sm text-muted-foreground">
-              Breakdown by product and size for {getDisplayLabel(range)}
+              Breakdown by product and size for {formatDateKey(selectedDate)}
             </div>
           </div>
           <div className="text-right">
@@ -710,7 +708,7 @@ export default function DashboardClient({
 
         {shawarmaItemStats.length === 0 ? (
           <p className="py-4 text-center text-sm text-muted-foreground">
-            No shawarma orders for {getDisplayLabel(range).toLowerCase()}.
+            No shawarma orders for {formatDateKey(selectedDate).toLowerCase()}.
           </p>
         ) : (
           <div className="overflow-x-auto">
@@ -792,6 +790,7 @@ export default function DashboardClient({
                   <TableCell className="text-muted-foreground text-xs">
                     {order.created_at
                       ? new Date(order.created_at).toLocaleDateString("en-GH", {
+                          timeZone: "UTC",
                           month: "short",
                           day: "numeric",
                           hour: "2-digit",

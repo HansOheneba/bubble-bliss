@@ -29,7 +29,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import RangeSelect from "@/components/admin/range-select";
+import DateSelect from "@/components/admin/range-select";
 import {
   Select,
   SelectContent,
@@ -38,12 +38,12 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
-  buildRangeSeries,
-  getRangeCutoff,
-  getDisplayLabel,
-  getRangeTickStep,
+  buildDaySeries,
+  getDayBoundsUtc,
+  getMonthBoundsUtc,
+  ghanaToday,
+  formatDateKey,
   sparseTickLabel,
-  type RangeKey,
 } from "@/lib/range-metrics";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -132,23 +132,18 @@ type CompareMetrics = {
   topProducts: { name: string; qty: number; revenueGhs: number }[];
 };
 
-function getDayRange(offset: number, now: Date): [Date, Date] {
-  const start = new Date(now);
-  start.setHours(0, 0, 0, 0);
-  start.setDate(start.getDate() - offset);
-  if (offset === 0) {
-    return [start, now];
-  }
-  const end = new Date(start);
-  end.setDate(end.getDate() + 1);
-  return [start, end];
-}
-
-function getMonthRange(yearMonth: string): [Date, Date] {
-  const [year, month] = yearMonth.split("-").map(Number);
-  const start = new Date(year, month - 1, 1, 0, 0, 0, 0);
-  const end = new Date(year, month, 1, 0, 0, 0, 0);
-  return [start, end];
+function getDayRange(offset: number): [Date, Date] {
+  const now = new Date();
+  const d = new Date(
+    Date.UTC(
+      now.getUTCFullYear(),
+      now.getUTCMonth(),
+      now.getUTCDate() - offset,
+    ),
+  );
+  const pad2 = (n: number) => n.toString().padStart(2, "0");
+  const key = `${d.getUTCFullYear()}-${pad2(d.getUTCMonth() + 1)}-${pad2(d.getUTCDate())}`;
+  return getDayBoundsUtc(key);
 }
 
 function computeRangeMetrics(
@@ -283,13 +278,12 @@ export default function AnalyticsClient({
     router.replace(`${pathname}?${params.toString()}`, { scroll: false });
   }
 
-  const [range, setRange] = React.useState<RangeKey>(
-    (searchParams.get("range") as RangeKey) ?? "today",
+  const [selectedDate, setSelectedDate] = React.useState<string>(
+    searchParams.get("date") ?? ghanaToday(),
   );
   const [selectedBranch, setSelectedBranch] = React.useState<string>(
     searchParams.get("branch") ?? "all",
   );
-  const now = new Date();
 
   const [activeTab, setActiveTab] = React.useState<"overview" | "compare">(
     (searchParams.get("tab") as "overview" | "compare") ?? "overview",
@@ -335,10 +329,11 @@ export default function AnalyticsClient({
       : tellerStats.filter((t) => t.branch === selectedBranch);
 
   // ── KPI computations ────────────────────────────────────────────────────
-  const cutoff = getRangeCutoff(range, now);
-  const rangeActiveOrders = activeOrders.filter(
-    (o) => new Date(o.createdAt) >= cutoff,
-  );
+  const [dayStart, dayEnd] = getDayBoundsUtc(selectedDate);
+  const rangeActiveOrders = activeOrders.filter((o) => {
+    const d = new Date(o.createdAt);
+    return d >= dayStart && d < dayEnd;
+  });
   const cupsInRange = rangeActiveOrders.reduce(
     (acc, o) => acc + o.cupsInOrder,
     0,
@@ -379,9 +374,10 @@ export default function AnalyticsClient({
     selectedBranch === "all"
       ? slimShawarmaItems
       : slimShawarmaItems.filter((s) => s.branchName === selectedBranch);
-  const rangeShawarmaItems = activeShawarmaItems.filter(
-    (s) => new Date(s.createdAt) >= cutoff,
-  );
+  const rangeShawarmaItems = activeShawarmaItems.filter((s) => {
+    const d = new Date(s.createdAt);
+    return d >= dayStart && d < dayEnd;
+  });
   const shawarmaStatMap = new Map<
     string,
     {
@@ -417,11 +413,11 @@ export default function AnalyticsClient({
   );
 
   // ── Range time series ───────────────────────────────────────────────────
-  const rangeSeries = buildRangeSeries(range, activeOrders, now, {
+  const rangeSeries = buildDaySeries(selectedDate, activeOrders, {
     getDate: (o) => new Date(o.createdAt),
     getRevenue: (o) => o.totalGhs,
   });
-  const tickStep = getRangeTickStep(range);
+  const tickStep = 3;
 
   // ── Chart configs ───────────────────────────────────────────────────────
   const revenueConfig = {
@@ -476,15 +472,18 @@ export default function AnalyticsClient({
 
   // ── Compare computed ──────────────────────────────────────────────────────
   const dayOptions = Array.from({ length: 7 }, (_, i) => {
-    const d = new Date(now);
-    d.setHours(0, 0, 0, 0);
-    d.setDate(d.getDate() - i);
+    const now = new Date();
+    const pad2 = (n: number) => n.toString().padStart(2, "0");
+    const d = new Date(
+      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - i),
+    );
     const label =
       i === 0
         ? "Today"
         : i === 1
           ? "Yesterday"
           : d.toLocaleDateString("en-GH", {
+              timeZone: "UTC",
               weekday: "long",
               month: "short",
               day: "numeric",
@@ -493,12 +492,14 @@ export default function AnalyticsClient({
   });
 
   const monthOptions = Array.from({ length: 12 }, (_, i) => {
-    const d = new Date(now);
-    d.setDate(1);
-    d.setHours(0, 0, 0, 0);
-    d.setMonth(d.getMonth() - i);
-    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+    const now = new Date();
+    const pad2 = (n: number) => n.toString().padStart(2, "0");
+    const d = new Date(
+      Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - i, 1),
+    );
+    const key = `${d.getUTCFullYear()}-${pad2(d.getUTCMonth() + 1)}`;
     const label = d.toLocaleDateString("en-GH", {
+      timeZone: "UTC",
       month: "long",
       year: "numeric",
     });
@@ -517,16 +518,16 @@ export default function AnalyticsClient({
   const validMonthFmt = /^\d{4}-\d{2}$/;
   const rangeA: [Date, Date] =
     compareMode === "days"
-      ? getDayRange(isNaN(Number(compareA)) ? 0 : Number(compareA), now)
+      ? getDayRange(isNaN(Number(compareA)) ? 0 : Number(compareA))
       : validMonthFmt.test(compareA)
-        ? getMonthRange(compareA)
-        : getDayRange(0, now);
+        ? getMonthBoundsUtc(compareA)
+        : getDayRange(0);
   const rangeB: [Date, Date] =
     compareMode === "days"
-      ? getDayRange(isNaN(Number(compareB)) ? 1 : Number(compareB), now)
+      ? getDayRange(isNaN(Number(compareB)) ? 1 : Number(compareB))
       : validMonthFmt.test(compareB)
-        ? getMonthRange(compareB)
-        : getDayRange(1, now);
+        ? getMonthBoundsUtc(compareB)
+        : getDayRange(1);
 
   const metricsA = computeRangeMetrics(
     rangeA[0],
@@ -557,8 +558,8 @@ export default function AnalyticsClient({
                 ? "Comparing periods across all branches."
                 : `Comparing periods for ${selectedBranch} only.`
               : selectedBranch === "all"
-                ? `Showing ${getDisplayLabel(range)} across all branches.`
-                : `Showing ${getDisplayLabel(range)} for ${selectedBranch} only.`}
+                ? `Showing ${formatDateKey(selectedDate)} (Ghana time) across all branches.`
+                : `Showing ${formatDateKey(selectedDate)} (Ghana time) for ${selectedBranch} only.`}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
@@ -584,12 +585,12 @@ export default function AnalyticsClient({
           </Select>
           {activeTab === "overview" && (
             <>
-              <span>Trend range</span>
-              <RangeSelect
-                value={range}
+              <span>Date</span>
+              <DateSelect
+                value={selectedDate}
                 onValueChange={(v) => {
-                  setRange(v);
-                  syncToUrl({ range: v === "today" ? null : v });
+                  setSelectedDate(v);
+                  syncToUrl({ date: v === ghanaToday() ? null : v });
                 }}
               />
             </>
@@ -620,7 +621,7 @@ export default function AnalyticsClient({
                 {totalOrders}
               </p>
               <p className="mt-1 text-xs text-muted-foreground">
-                {getDisplayLabel(range)}
+                {formatDateKey(selectedDate)}
               </p>
             </div>
             <div className="rounded-lg border bg-card p-6">
@@ -631,7 +632,7 @@ export default function AnalyticsClient({
                 {formatMoney(totalRevenueGhs)}
               </p>
               <p className="mt-1 text-xs text-muted-foreground">
-                {getDisplayLabel(range)}
+                {formatDateKey(selectedDate)}
               </p>
             </div>
             <div className="rounded-lg border bg-card p-6">
@@ -651,7 +652,7 @@ export default function AnalyticsClient({
                 {completedInRange}
               </p>
               <p className="mt-1 text-xs text-muted-foreground">
-                {getDisplayLabel(range)}
+                {formatDateKey(selectedDate)}
               </p>
             </div>
             <div className="rounded-lg border bg-card p-6">
@@ -662,7 +663,7 @@ export default function AnalyticsClient({
                 {cupsInRange}
               </p>
               <p className="mt-1 text-xs text-muted-foreground">
-                {getDisplayLabel(range)}
+                {formatDateKey(selectedDate)}
               </p>
             </div>
           </div>
@@ -847,7 +848,7 @@ export default function AnalyticsClient({
                   Revenue by payment
                 </p>
                 <p className="text-xs text-muted-foreground mb-3">
-                  {getDisplayLabel(range)}, paid orders only
+                  {formatDateKey(selectedDate)}, paid orders only
                 </p>
                 {paymentBreakdown.length === 0 ? (
                   <p className="text-xs text-muted-foreground text-center py-4">
@@ -1028,7 +1029,7 @@ export default function AnalyticsClient({
                   Shawarma Sales
                 </p>
                 <p className="text-sm text-muted-foreground">
-                  Breakdown by product and size &mdash; {getDisplayLabel(range)}
+                  Breakdown by product and size - {formatDateKey(selectedDate)}
                   {selectedBranch !== "all" ? ` · ${selectedBranch}` : ""}
                 </p>
               </div>
@@ -1060,7 +1061,8 @@ export default function AnalyticsClient({
 
             {shawarmaItemStats.length === 0 ? (
               <p className="py-4 text-center text-sm text-muted-foreground">
-                No shawarma orders for {getDisplayLabel(range).toLowerCase()}.
+                No shawarma orders for{" "}
+                {formatDateKey(selectedDate).toLowerCase()}.
               </p>
             ) : (
               <div className="overflow-x-auto">
