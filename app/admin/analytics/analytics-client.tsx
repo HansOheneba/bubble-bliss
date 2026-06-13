@@ -217,6 +217,107 @@ function computeRangeMetrics(
   };
 }
 
+type MonthlyBranchRow = {
+  monthKey: string;
+  monthLabel: string;
+  branchName: string;
+  orders: number;
+  revenueGhs: number;
+  prevOrders: number | null;
+  prevRevenueGhs: number | null;
+};
+
+function formatMonthKeyLabel(monthKey: string) {
+  const [year, month] = monthKey.split("-").map(Number);
+  const d = new Date(Date.UTC(year, month - 1, 1));
+  return d.toLocaleDateString("en-GH", {
+    timeZone: "UTC",
+    month: "short",
+    year: "numeric",
+  });
+}
+
+function buildMonthlyBranchBreakdown(
+  orders: SlimOrder[],
+  branches: string[],
+  branchFilter: string,
+  monthsBack = 12,
+): {
+  rows: MonthlyBranchRow[];
+  monthKeys: string[];
+  activeBranches: string[];
+} {
+  const pad2 = (n: number) => n.toString().padStart(2, "0");
+  const now = new Date();
+
+  const monthKeys: string[] = [];
+  for (let i = 0; i < monthsBack; i++) {
+    const d = new Date(
+      Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - i, 1),
+    );
+    monthKeys.push(`${d.getUTCFullYear()}-${pad2(d.getUTCMonth() + 1)}`);
+  }
+
+  const activeBranches =
+    branchFilter === "all" ? branches : branches.includes(branchFilter) ? [branchFilter] : [];
+
+  const accum = new Map<
+    string,
+    Map<string, { orders: number; revenueGhs: number }>
+  >();
+  for (const key of monthKeys) {
+    accum.set(key, new Map());
+  }
+
+  for (const o of orders) {
+    const d = new Date(o.createdAt);
+    const monthKey = `${d.getUTCFullYear()}-${pad2(d.getUTCMonth() + 1)}`;
+    const monthMap = accum.get(monthKey);
+    if (!monthMap) continue;
+    if (branchFilter !== "all" && o.branchName !== branchFilter) continue;
+    if (branchFilter === "all" && !activeBranches.includes(o.branchName)) {
+      continue;
+    }
+
+    const cur = monthMap.get(o.branchName) ?? { orders: 0, revenueGhs: 0 };
+    cur.orders += 1;
+    cur.revenueGhs += o.totalGhs;
+    monthMap.set(o.branchName, cur);
+  }
+
+  const rows: MonthlyBranchRow[] = [];
+  for (let i = 0; i < monthKeys.length; i++) {
+    const monthKey = monthKeys[i];
+    const monthLabel = formatMonthKeyLabel(monthKey);
+    const prevMonthKey = monthKeys[i + 1];
+
+    for (const branchName of activeBranches) {
+      const stats = accum.get(monthKey)?.get(branchName) ?? {
+        orders: 0,
+        revenueGhs: 0,
+      };
+      const prevStats = prevMonthKey
+        ? (accum.get(prevMonthKey)?.get(branchName) ?? {
+            orders: 0,
+            revenueGhs: 0,
+          })
+        : null;
+
+      rows.push({
+        monthKey,
+        monthLabel,
+        branchName,
+        orders: stats.orders,
+        revenueGhs: stats.revenueGhs,
+        prevOrders: prevStats?.orders ?? null,
+        prevRevenueGhs: prevStats?.revenueGhs ?? null,
+      });
+    }
+  }
+
+  return { rows, monthKeys, activeBranches };
+}
+
 function DeltaCell({
   a,
   b,
@@ -285,8 +386,11 @@ export default function AnalyticsClient({
     searchParams.get("branch") ?? "all",
   );
 
-  const [activeTab, setActiveTab] = React.useState<"overview" | "compare">(
-    (searchParams.get("tab") as "overview" | "compare") ?? "overview",
+  const [activeTab, setActiveTab] = React.useState<
+    "overview" | "compare" | "monthly"
+  >(
+    (searchParams.get("tab") as "overview" | "compare" | "monthly") ??
+      "overview",
   );
   const [compareMode, setCompareMode] = React.useState<"days" | "months">(
     (searchParams.get("cmode") as "days" | "months") ?? "days",
@@ -544,6 +648,41 @@ export default function AnalyticsClient({
     selectedBranch,
   );
 
+  const { rows: monthlyBranchRows, monthKeys, activeBranches } =
+    buildMonthlyBranchBreakdown(slimOrders, branches, selectedBranch);
+
+  const monthlyChartData = monthKeys
+    .slice()
+    .reverse()
+    .map((monthKey) => {
+      const entry: Record<string, string | number> = {
+        month: formatMonthKeyLabel(monthKey),
+      };
+      for (const branchName of activeBranches) {
+        const row = monthlyBranchRows.find(
+          (r) => r.monthKey === monthKey && r.branchName === branchName,
+        );
+        entry[branchName] = row?.revenueGhs ?? 0;
+      }
+      return entry;
+    });
+
+  const monthlyBranchChartConfig = activeBranches.reduce(
+    (acc, b, i) => {
+      acc[b] = {
+        label: b,
+        color: CHART_COLORS[i % CHART_COLORS.length],
+      };
+      return acc;
+    },
+    {} as Record<string, { label: string; color: string }>,
+  );
+
+  const monthlyBranchGroups = activeBranches.map((branchName) => ({
+    branchName,
+    rows: monthlyBranchRows.filter((r) => r.branchName === branchName),
+  }));
+
   return (
     <div className="space-y-8">
       {/* Header */}
@@ -557,9 +696,13 @@ export default function AnalyticsClient({
               ? selectedBranch === "all"
                 ? "Comparing periods across all branches."
                 : `Comparing periods for ${selectedBranch} only.`
-              : selectedBranch === "all"
-                ? `Showing ${formatDateKey(selectedDate)} (Ghana time) across all branches.`
-                : `Showing ${formatDateKey(selectedDate)} (Ghana time) for ${selectedBranch} only.`}
+              : activeTab === "monthly"
+                ? selectedBranch === "all"
+                  ? "Monthly performance and month-over-month change for every branch."
+                  : `Monthly performance and month-over-month change for ${selectedBranch}.`
+                : selectedBranch === "all"
+                  ? `Showing ${formatDateKey(selectedDate)} (Ghana time) across all branches.`
+                  : `Showing ${formatDateKey(selectedDate)} (Ghana time) for ${selectedBranch} only.`}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
@@ -601,12 +744,13 @@ export default function AnalyticsClient({
       <Tabs
         value={activeTab}
         onValueChange={(v) => {
-          setActiveTab(v as "overview" | "compare");
+          setActiveTab(v as "overview" | "compare" | "monthly");
           syncToUrl({ tab: v === "overview" ? null : v });
         }}
       >
-        <TabsList className="mb-2">
+        <TabsList className="mb-2 flex-wrap h-auto gap-1">
           <TabsTrigger value="overview">Overview</TabsTrigger>
+          <TabsTrigger value="monthly">Monthly by branch</TabsTrigger>
           <TabsTrigger value="compare">Compare</TabsTrigger>
         </TabsList>
 
@@ -1367,6 +1511,228 @@ export default function AnalyticsClient({
                 </Table>
               </div>
             </div>
+          )}
+        </TabsContent>
+
+        <TabsContent value="monthly" className="mt-4 space-y-6">
+          {activeBranches.length === 0 ? (
+            <div className="rounded-lg border border-dashed bg-muted/40 p-10 text-center">
+              <p className="text-sm text-muted-foreground">
+                No branch data available yet.
+              </p>
+            </div>
+          ) : (
+            <>
+              <div className="rounded-lg border bg-card p-4 sm:p-6">
+                <p className="text-base font-semibold text-foreground">
+                  Monthly revenue by branch
+                </p>
+                <p className="text-sm text-muted-foreground mb-4">
+                  Last 12 months. Change in each table row compares to the
+                  previous month for the same branch.
+                </p>
+                {monthlyChartData.length === 0 ? (
+                  <p className="text-sm text-muted-foreground py-8 text-center">
+                    No monthly data yet.
+                  </p>
+                ) : (
+                  <ChartContainer
+                    config={monthlyBranchChartConfig}
+                    className="h-56 sm:h-64 w-full min-w-0"
+                  >
+                    <BarChart data={monthlyChartData}>
+                      <CartesianGrid
+                        strokeDasharray="3 3"
+                        className="stroke-border"
+                      />
+                      <XAxis
+                        dataKey="month"
+                        tickLine={false}
+                        axisLine={false}
+                        tick={{ fontSize: 10 }}
+                        interval="preserveStartEnd"
+                      />
+                      <YAxis
+                        tickLine={false}
+                        axisLine={false}
+                        tick={{ fontSize: 10 }}
+                        width={52}
+                        tickFormatter={(v) => `GHS ${(v as number).toFixed(0)}`}
+                      />
+                      <ChartTooltip content={<ChartTooltipContent />} />
+                      <ChartLegend content={<ChartLegendContent />} />
+                      {activeBranches.map((branchName, i) => (
+                        <Bar
+                          key={branchName}
+                          dataKey={branchName}
+                          fill={CHART_COLORS[i % CHART_COLORS.length]}
+                          radius={[4, 4, 0, 0]}
+                          name={branchName}
+                        />
+                      ))}
+                    </BarChart>
+                  </ChartContainer>
+                )}
+              </div>
+
+              <div className="space-y-4">
+                {monthlyBranchGroups.map(({ branchName, rows }) => (
+                  <div
+                    key={branchName}
+                    className="rounded-lg border bg-card overflow-hidden"
+                  >
+                    <div className="border-b px-4 sm:px-6 py-4">
+                      <p className="text-base font-semibold text-foreground">
+                        {branchName}
+                      </p>
+                      <p className="text-sm text-muted-foreground mt-0.5">
+                        Orders and revenue each month with comparison to the
+                        prior month
+                      </p>
+                    </div>
+                    <div className="overflow-x-auto">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead className="min-w-28">Month</TableHead>
+                            <TableHead className="text-right min-w-20">
+                              Orders
+                            </TableHead>
+                            <TableHead className="text-right min-w-24">
+                              Revenue
+                            </TableHead>
+                            <TableHead className="text-right min-w-24">
+                              Orders vs prev
+                            </TableHead>
+                            <TableHead className="text-right min-w-28">
+                              Revenue vs prev
+                            </TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {rows.map((row) => (
+                            <TableRow key={`${row.monthKey}-${branchName}`}>
+                              <TableCell className="font-medium">
+                                {row.monthLabel}
+                              </TableCell>
+                              <TableCell className="text-right font-semibold">
+                                {row.orders}
+                              </TableCell>
+                              <TableCell className="text-right font-semibold">
+                                {formatMoney(row.revenueGhs)}
+                              </TableCell>
+                              <TableCell className="text-right">
+                                {row.prevOrders === null ? (
+                                  <span className="text-xs text-muted-foreground">
+                                    n/a
+                                  </span>
+                                ) : (
+                                  <DeltaCell
+                                    a={row.orders}
+                                    b={row.prevOrders}
+                                  />
+                                )}
+                              </TableCell>
+                              <TableCell className="text-right">
+                                {row.prevRevenueGhs === null ? (
+                                  <span className="text-xs text-muted-foreground">
+                                    n/a
+                                  </span>
+                                ) : (
+                                  <DeltaCell
+                                    a={row.revenueGhs}
+                                    b={row.prevRevenueGhs}
+                                  />
+                                )}
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {selectedBranch === "all" && monthlyBranchRows.length > 0 && (
+                <div className="rounded-lg border bg-card overflow-hidden">
+                  <div className="border-b px-4 sm:px-6 py-4">
+                    <p className="text-base font-semibold text-foreground">
+                      All branches summary
+                    </p>
+                    <p className="text-sm text-muted-foreground mt-0.5">
+                      Combined monthly view across every branch
+                    </p>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="min-w-28">Month</TableHead>
+                          <TableHead className="min-w-32">Branch</TableHead>
+                          <TableHead className="text-right min-w-20">
+                            Orders
+                          </TableHead>
+                          <TableHead className="text-right min-w-24">
+                            Revenue
+                          </TableHead>
+                          <TableHead className="text-right min-w-24">
+                            Orders vs prev
+                          </TableHead>
+                          <TableHead className="text-right min-w-28">
+                            Revenue vs prev
+                          </TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {monthlyBranchRows.map((row) => (
+                          <TableRow
+                            key={`${row.monthKey}-${row.branchName}-summary`}
+                          >
+                            <TableCell className="font-medium">
+                              {row.monthLabel}
+                            </TableCell>
+                            <TableCell className="text-muted-foreground">
+                              {row.branchName}
+                            </TableCell>
+                            <TableCell className="text-right font-semibold">
+                              {row.orders}
+                            </TableCell>
+                            <TableCell className="text-right font-semibold">
+                              {formatMoney(row.revenueGhs)}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              {row.prevOrders === null ? (
+                                <span className="text-xs text-muted-foreground">
+                                  n/a
+                                </span>
+                              ) : (
+                                <DeltaCell
+                                  a={row.orders}
+                                  b={row.prevOrders}
+                                />
+                              )}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              {row.prevRevenueGhs === null ? (
+                                <span className="text-xs text-muted-foreground">
+                                  n/a
+                                </span>
+                              ) : (
+                                <DeltaCell
+                                  a={row.revenueGhs}
+                                  b={row.prevRevenueGhs}
+                                />
+                              )}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </div>
+              )}
+            </>
           )}
         </TabsContent>
 
