@@ -22,3 +22,7 @@ CREATE TABLE public.tellers (
 -- 3. Add teller_id to orders (nullable — online orders won't have one)
 ALTER TABLE public.orders
   ADD COLUMN IF NOT EXISTS teller_id integer REFERENCES public.tellers (id);
+
+-- 4. Make phone optional (POS walk-in orders may omit customer phone)
+ALTER TABLE public.orders
+  ALTER COLUMN phone DROP NOT NULL;

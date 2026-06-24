@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase";
-import { normalisePhone, initiateHubtelCheckout } from "@/lib/hubtel";
+import { parseOptionalPhone, initiateHubtelCheckout } from "@/lib/hubtel";
 import type {
   Branch,
   Product,
@@ -127,15 +127,9 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  let normalisedPhone: string | null = null;
-  if (phone) {
-    normalisedPhone = normalisePhone(phone);
-    if (!/^233\d{9}$/.test(normalisedPhone)) {
-      return NextResponse.json(
-        { message: "Invalid phone number — expected 10-digit Ghanaian number" },
-        { status: 400 },
-      );
-    }
+  const { phone: normalisedPhone, error: phoneError } = parseOptionalPhone(phone);
+  if (phoneError) {
+    return NextResponse.json({ message: phoneError }, { status: 400 });
   }
 
   const db = createAdminClient();

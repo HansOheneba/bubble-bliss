@@ -7,6 +7,27 @@ export function normalisePhone(raw: string): string {
   return stripped;
 }
 
+/** Returns null when phone is omitted or blank. Validates format when provided. */
+export function parseOptionalPhone(
+  raw: string | null | undefined,
+): { phone: string | null; error?: string } {
+  if (raw == null) return { phone: null };
+  if (typeof raw !== "string") return { phone: null };
+
+  const trimmed = raw.trim();
+  if (!trimmed) return { phone: null };
+
+  const normalised = normalisePhone(trimmed);
+  if (!/^233\d{9}$/.test(normalised)) {
+    return {
+      phone: null,
+      error: "Invalid phone number — expected 10-digit Ghanaian number",
+    };
+  }
+
+  return { phone: normalised };
+}
+
 // ── Hubtel Payment API ────────────────────────────────────────────────────────
 
 type HubtelInitiateApiResponse = {
