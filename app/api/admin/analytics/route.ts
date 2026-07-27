@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase";
+import { fetchAllPages } from "@/lib/supabase-fetch";
 import type { PosUser } from "@/lib/database.types";
 
 // ── Query params ──────────────────────────────────────────────────────────────
@@ -96,23 +97,39 @@ export async function GET(req: NextRequest) {
     items: RawItem[];
   };
 
-  let ordersQuery = db
-    .from("orders")
-    .select(
-      "total_pesewas, payment_method, items:order_items(product_id, quantity)",
-    )
-    .in("status", ["paid", "completed"])
-    .gte("created_at", todayStart.toISOString());
+  let rawOrders: RawOrder[] = [];
+  let rawCategories: { id: number; slug: string }[] | null = null;
 
-  if (branchId !== null) {
-    ordersQuery = ordersQuery.eq("branch_id", branchId);
-  }
+  try {
+    const [orders, categoriesResult] = await Promise.all([
+      fetchAllPages<RawOrder>((from, to) => {
+        let query = db
+          .from("orders")
+          .select(
+            "total_pesewas, payment_method, items:order_items(product_id, quantity)",
+          )
+          .in("status", ["paid", "completed"])
+          .gte("created_at", todayStart.toISOString())
+          .order("created_at", { ascending: false })
+          .range(from, to);
 
-  const [{ data: rawOrders, error: ordersError }, { data: rawCategories }] =
-    await Promise.all([ordersQuery, db.from("categories").select("id, slug")]);
+        if (branchId !== null) {
+          query = query.eq("branch_id", branchId);
+        }
 
-  if (ordersError) {
-    console.error("POS analytics fetch error:", ordersError);
+        return query as unknown as PromiseLike<{
+          data: RawOrder[] | null;
+          error: { message: string } | null;
+        }>;
+      }),
+      db.from("categories").select("id, slug"),
+    ]);
+    rawOrders = orders;
+    rawCategories = categoriesResult.data as
+      | { id: number; slug: string }[]
+      | null;
+  } catch (err) {
+    console.error("POS analytics fetch error:", err);
     return NextResponse.json(
       { message: "Failed to fetch analytics data" },
       { status: 500 },
@@ -120,9 +137,7 @@ export async function GET(req: NextRequest) {
   }
 
   // ── Identify shawarma category ────────────────────────────────────────────
-  const shawarmaCategory = (
-    rawCategories as { id: number; slug: string }[] | null
-  )?.find((c) => c.slug === "shawarma");
+  const shawarmaCategory = rawCategories?.find((c) => c.slug === "shawarma");
 
   // ── Fetch products to determine which are shawarma ────────────────────────
   const shawarmaProductIds = new Set<number>();
@@ -139,13 +154,14 @@ export async function GET(req: NextRequest) {
   }
 
   // ── Compute totals ────────────────────────────────────────────────────────
-  const orders = (rawOrders ?? []) as unknown as RawOrder[];
-
-  const ordersCompleted = orders.length;
-  const revenueGhs = orders.reduce((acc, o) => acc + o.total_pesewas / 100, 0);
+  const ordersCompleted = rawOrders.length;
+  const revenueGhs = rawOrders.reduce(
+    (acc, o) => acc + o.total_pesewas / 100,
+    0,
+  );
 
   let cupsUsed = 0;
-  for (const o of orders) {
+  for (const o of rawOrders) {
     for (const item of o.items) {
       // A cup is used for every non-shawarma item quantity
       if (
@@ -163,7 +179,7 @@ export async function GET(req: NextRequest) {
     { method: PaymentMethod; orders: number; revenueGhs: number }
   >();
 
-  for (const o of orders) {
+  for (const o of rawOrders) {
     const method = o.payment_method;
     const existing = methodMap.get(method);
     const amount = o.total_pesewas / 100;

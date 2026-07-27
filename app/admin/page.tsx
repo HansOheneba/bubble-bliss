@@ -1,19 +1,26 @@
 import { Suspense } from "react";
 import { createAdminClient } from "@/lib/supabase";
+import { fetchAllPages } from "@/lib/supabase-fetch";
 import type { OrderWithItems } from "@/lib/database.types";
 import DashboardClient from "./dashboard-client";
 
 async function fetchDashboardData() {
   const supabase = createAdminClient();
 
-  const [ordersResult, productsResult, toppingsResult, categoriesResult] =
+  const [orders, productsResult, toppingsResult, categoriesResult] =
     await Promise.all([
-      supabase
-        .from("orders")
-        .select(
-          `*, branch:branches(*), items:order_items(*, toppings:order_item_toppings(*))`,
-        )
-        .order("created_at", { ascending: false }),
+      fetchAllPages<OrderWithItems>((from, to) =>
+        supabase
+          .from("orders")
+          .select(
+            `*, branch:branches(*), items:order_items(*, toppings:order_item_toppings(*))`,
+          )
+          .order("created_at", { ascending: false })
+          .range(from, to) as unknown as PromiseLike<{
+          data: OrderWithItems[] | null;
+          error: { message: string } | null;
+        }>,
+      ),
       supabase.from("products").select("id, is_active, in_stock"),
       supabase.from("toppings").select("id, is_active, in_stock"),
       supabase.from("categories").select("id, slug"),
@@ -34,7 +41,7 @@ async function fetchDashboardData() {
   }
 
   return {
-    orders: (ordersResult.data ?? []) as OrderWithItems[],
+    orders,
     products: productsResult.data ?? [],
     toppings: toppingsResult.data ?? [],
     shawarmaProductIds,

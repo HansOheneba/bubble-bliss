@@ -1,5 +1,6 @@
 import { Suspense } from "react";
 import { createAdminClient } from "@/lib/supabase";
+import { fetchAllPages } from "@/lib/supabase-fetch";
 import type {
   Order,
   Branch,
@@ -89,17 +90,23 @@ export type CustomerStat = {
 async function fetchAnalyticsData() {
   const db = createAdminClient();
 
-  const [{ data: rawOrders }, { data: rawCategories }] = await Promise.all([
-    db
-      .from("orders")
-      .select(
-        "*, branch:branches(*), teller:tellers(*), items:order_items(*, toppings:order_item_toppings(*))",
-      )
-      .order("created_at", { ascending: false }),
+  const [rawOrders, { data: rawCategories }] = await Promise.all([
+    fetchAllPages<FullOrder>((from, to) =>
+      db
+        .from("orders")
+        .select(
+          "*, branch:branches(*), teller:tellers(*), items:order_items(*, toppings:order_item_toppings(*))",
+        )
+        .order("created_at", { ascending: false })
+        .range(from, to) as unknown as PromiseLike<{
+        data: FullOrder[] | null;
+        error: { message: string } | null;
+      }>,
+    ),
     db.from("categories").select("id, slug"),
   ]);
 
-  const orders = (rawOrders ?? []) as unknown as FullOrder[];
+  const orders = rawOrders;
 
   // ── Cups used (all-time, non-shawarma completed orders) ─────────────────
   const shawarmaCategory = (
