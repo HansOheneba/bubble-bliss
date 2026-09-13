@@ -48,6 +48,7 @@ import {
   sparseTickLabel,
 } from "@/lib/range-metrics";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
+import { countCupsInOrder, itemRevenueGhs } from "@/lib/order-metrics";
 import type { OrderWithItems } from "@/lib/database.types";
 
 type ProductRow = {
@@ -117,6 +118,8 @@ function StatusBadge({ status }: { status: string }) {
       "bg-orange-100 text-orange-800 dark:bg-orange-950/50 dark:text-orange-400 dark:border dark:border-orange-800/50",
     ready:
       "bg-green-100 text-green-800 dark:bg-green-950/50 dark:text-green-400 dark:border dark:border-green-800/50",
+    completed:
+      "bg-slate-100 text-slate-600 dark:bg-slate-800/50 dark:text-slate-400 dark:border dark:border-slate-700/50",
     delivered:
       "bg-slate-100 text-slate-600 dark:bg-slate-800/50 dark:text-slate-400 dark:border dark:border-slate-700/50",
     cancelled:
@@ -227,7 +230,7 @@ export default function DashboardClient({
           revenueGhs: 0,
         };
         cur.qty += item.quantity;
-        cur.revenueGhs += (item.unit_pesewas * item.quantity) / 100;
+        cur.revenueGhs += itemRevenueGhs(item);
         shawarmaStatMap.set(key, cur);
       }
     }
@@ -245,30 +248,23 @@ export default function DashboardClient({
     0,
   );
 
-  const cupsInRange = rangeOrders
-    .filter((o) => o.status === "completed")
-    .reduce(
-      (acc, o) =>
-        acc +
-        o.items.reduce(
-          (s, item) =>
-            s +
-            (item.product_id === null || !shawarmaIdSet.has(item.product_id)
-              ? (item.quantity ?? 0)
-              : 0),
-          0,
-        ),
-      0,
-    );
+  const cupsInRange = rangeOrders.reduce(
+    (acc, o) =>
+      acc +
+      countCupsInOrder(o.items, shawarmaIdSet, o.status, o.payment_status),
+    0,
+  );
 
-  const deliveredOrders = rangeOrders.filter((o) => o.status === "delivered");
-  const revenueDelivered = deliveredOrders.reduce(
+  const completedOrders = rangeOrders.filter(
+    (o) => o.status === "completed" || o.status === "delivered",
+  );
+  const revenueCompleted = completedOrders.reduce(
     (acc, o) => acc + pesewasToGhs(o.total_pesewas),
     0,
   );
 
   const avgOrderValue =
-    deliveredOrders.length > 0 ? revenueDelivered / deliveredOrders.length : 0;
+    completedOrders.length > 0 ? revenueCompleted / completedOrders.length : 0;
 
   const activeProducts = products.filter((p) => p.is_active);
   const outOfStockProducts = products.filter((p) => !p.in_stock);
@@ -286,7 +282,9 @@ export default function DashboardClient({
   const rangeSeries = buildDaySeries(selectedDate, orders, {
     getDate: (o) => new Date(o.created_at ?? 0),
     getRevenue: (o) =>
-      o.status === "delivered" ? pesewasToGhs(o.total_pesewas) : 0,
+      o.status === "completed" || o.status === "delivered"
+        ? pesewasToGhs(o.total_pesewas)
+        : 0,
   });
 
   const revenueByDay = rangeSeries.map((d) => ({
@@ -304,8 +302,10 @@ export default function DashboardClient({
 
   const statusSegments = [
     {
-      label: "Delivered",
-      value: orders.filter((o) => o.status === "delivered").length,
+      label: "Completed",
+      value: orders.filter(
+        (o) => o.status === "completed" || o.status === "delivered",
+      ).length,
       color: "var(--color-chart-1)",
     },
     {
@@ -450,7 +450,7 @@ export default function DashboardClient({
             Completed
           </div>
           <div className="mt-2 text-2xl font-bold text-foreground sm:text-3xl">
-            {deliveredOrders.length}
+            {completedOrders.length}
           </div>
           <div className="mt-1 text-xs text-muted-foreground">
             {formatDateKey(selectedDate)}
@@ -467,7 +467,7 @@ export default function DashboardClient({
                 Revenue trend ({formatDateKey(selectedDate)})
               </div>
               <div className="text-sm text-muted-foreground">
-                Delivered order revenue.
+                Completed order revenue.
               </div>
             </div>
             <div className="text-right">

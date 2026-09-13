@@ -440,15 +440,43 @@ export async function POST(req: NextRequest) {
   const orderId = (orderData as { id: number }).id;
   const orderNumber = `BB-${orderId}`;
 
-  // Set order_number now that we have the id
-  await db
+  async function rollbackOrder(reason: string): Promise<NextResponse> {
+    const { error: itemsDeleteError } = await db
+      .from("order_items")
+      .delete()
+      .eq("order_id", orderId);
+    if (itemsDeleteError) {
+      console.error(`Order item rollback failed for ${orderId}:`, itemsDeleteError);
+    }
+
+    const { error: deleteError } = await db.from("orders").delete().eq("id", orderId);
+    if (deleteError) {
+      console.error(`Order rollback failed for ${orderId}:`, deleteError);
+    }
+    console.error(`Checkout rolled back for order ${orderId}: ${reason}`);
+    return NextResponse.json(
+      { message: "Failed to save order items. Please try again." },
+      { status: 500 },
+    );
+  }
+
+  const { error: orderNumberError } = await db
     .from("orders")
     .update({ order_number: orderNumber } as never)
     .eq("id", orderId);
 
-  // ── Insert order_items + order_item_toppings ──────────────────────────────
+  if (orderNumberError) {
+    console.error("Order number update error:", { orderId, error: orderNumberError });
+    return rollbackOrder("order_number update failed");
+  }
 
-  for (const item of processedItems) {
+  // ── Insert order_items + order_item_toppings (atomic) ───────────────────
+
+  let persistedTotalPesewas = 0;
+
+  for (let i = 0; i < processedItems.length; i++) {
+    const item = processedItems[i];
+
     const { data: orderItemData, error: itemError } = await db
       .from("order_items")
       .insert({
@@ -467,11 +495,19 @@ export async function POST(req: NextRequest) {
       .single();
 
     if (itemError || !orderItemData) {
-      console.error("Order item insert error:", itemError);
-      continue; // order is saved — don't fail the whole request
+      console.error("Order item insert error:", {
+        orderId,
+        itemIndex: i + 1,
+        productName: item.productName,
+        error: itemError,
+      });
+      return rollbackOrder(
+        `item ${i + 1} "${item.productName}" insert failed`,
+      );
     }
 
     const orderItemId = (orderItemData as { id: string }).id;
+    persistedTotalPesewas += item.lineTotalPesewas;
 
     if (item.toppings.length > 0) {
       const { error: toppingError } = await db
@@ -487,9 +523,26 @@ export async function POST(req: NextRequest) {
         );
 
       if (toppingError) {
-        console.error("Topping insert error:", toppingError);
+        console.error("Topping insert error:", {
+          orderId,
+          itemIndex: i + 1,
+          productName: item.productName,
+          error: toppingError,
+        });
+        return rollbackOrder(
+          `toppings for item ${i + 1} "${item.productName}" insert failed`,
+        );
       }
     }
+  }
+
+  if (persistedTotalPesewas !== totalPesewas) {
+    console.error("Checkout total mismatch after insert:", {
+      orderId,
+      expectedTotalPesewas: totalPesewas,
+      persistedTotalPesewas,
+    });
+    return rollbackOrder("persisted item total does not match order total");
   }
 
   // ── Initiate Hubtel checkout ──────────────────────────────────────────────
@@ -508,11 +561,20 @@ export async function POST(req: NextRequest) {
     payeeEmail,
   });
 
+  const paymentInitFailed = !("checkoutId" in hubtelResult);
+
   if ("checkoutId" in hubtelResult) {
-    await db
+    const { error: hubtelUpdateError } = await db
       .from("orders")
       .update({ hubtel_checkout_id: hubtelResult.checkoutId } as never)
       .eq("id", orderId);
+
+    if (hubtelUpdateError) {
+      console.error("Hubtel checkout id update error:", {
+        orderId,
+        error: hubtelUpdateError,
+      });
+    }
   } else {
     console.error("Hubtel initiate error:", hubtelResult.error);
   }
@@ -526,7 +588,10 @@ export async function POST(req: NextRequest) {
     status: "pending",
     totalGhs: totalPesewas / 100,
     totalPesewas,
-    message: "Order placed successfully",
+    message: paymentInitFailed
+      ? "Order saved. Online payment could not be started; use cash or retry payment."
+      : "Order placed successfully",
+    paymentInitFailed,
     checkoutUrl: "checkoutId" in hubtelResult ? hubtelResult.checkoutUrl : null,
     checkoutDirectUrl:
       "checkoutId" in hubtelResult ? hubtelResult.checkoutDirectUrl : null,

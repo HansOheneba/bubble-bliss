@@ -27,16 +27,15 @@ type HubtelCallbackPayload = {
   status?: string;
 };
 
-// Always return 200 — Hubtel retries on any non-2xx response
 export async function POST(req: NextRequest) {
   let payload: HubtelCallbackPayload;
   try {
     payload = (await req.json()) as HubtelCallbackPayload;
   } catch {
+    console.error("Hubtel callback: invalid JSON payload");
     return NextResponse.json({ received: true });
   }
 
-  // Extract clientReference — check every possible location Hubtel might use
   const clientReference =
     payload.Data?.ClientReference ??
     payload.Data?.clientReference ??
@@ -46,7 +45,6 @@ export async function POST(req: NextRequest) {
     payload.clientReference ??
     null;
 
-  // Extract status
   const rawStatus =
     payload.Data?.Status ??
     payload.Data?.status ??
@@ -64,21 +62,31 @@ export async function POST(req: NextRequest) {
   const status = rawStatus.toLowerCase();
   const db = createAdminClient();
 
-  const { data: orderData } = await db
+  const { data: orderData, error: fetchError } = await db
     .from("orders")
     .select("*")
     .eq("client_reference", clientReference)
     .single();
+
+  if (fetchError) {
+    console.error("Hubtel callback: order fetch failed", {
+      clientReference,
+      error: fetchError,
+    });
+    return NextResponse.json(
+      { message: "Failed to load order for callback" },
+      { status: 500 },
+    );
+  }
+
   const order = orderData as Order | null;
 
   if (!order) {
-    // Not found — still 200 so Hubtel stops retrying
     console.warn("Hubtel callback: order not found for ref", clientReference);
     return NextResponse.json({ received: true });
   }
 
   if (status === "success") {
-    // Idempotency — skip if already marked paid
     if (order.payment_status === "paid") {
       return NextResponse.json({ received: true });
     }
@@ -94,9 +102,12 @@ export async function POST(req: NextRequest) {
 
     if (updateError) {
       console.error("Failed to update order on payment success:", updateError);
+      return NextResponse.json(
+        { message: "Failed to record payment" },
+        { status: 500 },
+      );
     }
 
-    // Non-fatal SMS
     if (order.phone) await sendSmsConfirmation(order.phone);
   } else if (status === "failed") {
     const { error: updateError } = await db
@@ -109,6 +120,10 @@ export async function POST(req: NextRequest) {
 
     if (updateError) {
       console.error("Failed to update order on payment failure:", updateError);
+      return NextResponse.json(
+        { message: "Failed to record payment failure" },
+        { status: 500 },
+      );
     }
   }
 

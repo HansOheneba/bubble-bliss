@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase";
 import { fetchAllPages } from "@/lib/supabase-fetch";
+import {
+  countCupsInOrder,
+  isRevenueCountable,
+} from "@/lib/order-metrics";
+import { fetchShawarmaProductIds } from "@/lib/shawarma-products";
 import type { PosUser } from "@/lib/database.types";
 
 // ── Query params ──────────────────────────────────────────────────────────────
@@ -11,9 +16,9 @@ import type { PosUser } from "@/lib/database.types";
 // Response:
 // {
 //   date: "YYYY-MM-DD",
-//   ordersCompleted: number,    — paid or completed orders today
-//   cupsUsed: number,           — total drink cups consumed today (non-shawarma items)
-//   revenueGhs: number          — total revenue from paid or completed orders today (GHS)
+//   ordersPaid: number,         — paid non-cancelled orders today
+//   cupsUsed: number,           — cups from completed/delivered paid orders today
+//   revenueGhs: number          — revenue from paid non-cancelled orders today (GHS)
 //   paymentBreakdown: Array<{
 //     method: "cash" | "momo" | "hubtel",
 //     orders: number,
@@ -94,21 +99,24 @@ export async function GET(req: NextRequest) {
   type RawOrder = {
     total_pesewas: number;
     payment_method: PaymentMethod;
+    payment_status: string | null;
+    status: string | null;
     items: RawItem[];
   };
 
   let rawOrders: RawOrder[] = [];
-  let rawCategories: { id: number; slug: string }[] | null = null;
+  let shawarmaProductIds = new Set<number>();
 
   try {
-    const [orders, categoriesResult] = await Promise.all([
+    const [orders, shawarmaIds] = await Promise.all([
       fetchAllPages<RawOrder>((from, to) => {
         let query = db
           .from("orders")
           .select(
-            "total_pesewas, payment_method, items:order_items(product_id, quantity)",
+            "total_pesewas, payment_method, payment_status, status, items:order_items(product_id, quantity)",
           )
-          .in("status", ["paid", "completed"])
+          .eq("payment_status", "paid")
+          .neq("status", "cancelled")
           .gte("created_at", todayStart.toISOString())
           .order("created_at", { ascending: false })
           .range(from, to);
@@ -122,12 +130,10 @@ export async function GET(req: NextRequest) {
           error: { message: string } | null;
         }>;
       }),
-      db.from("categories").select("id, slug"),
+      fetchShawarmaProductIds(db),
     ]);
     rawOrders = orders;
-    rawCategories = categoriesResult.data as
-      | { id: number; slug: string }[]
-      | null;
+    shawarmaProductIds = shawarmaIds;
   } catch (err) {
     console.error("POS analytics fetch error:", err);
     return NextResponse.json(
@@ -136,41 +142,21 @@ export async function GET(req: NextRequest) {
     );
   }
 
-  // ── Identify shawarma category ────────────────────────────────────────────
-  const shawarmaCategory = rawCategories?.find((c) => c.slug === "shawarma");
-
-  // ── Fetch products to determine which are shawarma ────────────────────────
-  const shawarmaProductIds = new Set<number>();
-
-  if (shawarmaCategory) {
-    const { data: shawarmaProducts } = await db
-      .from("products")
-      .select("id")
-      .eq("category_id", shawarmaCategory.id);
-
-    for (const p of (shawarmaProducts ?? []) as { id: number }[]) {
-      shawarmaProductIds.add(p.id);
-    }
-  }
-
-  // ── Compute totals ────────────────────────────────────────────────────────
-  const ordersCompleted = rawOrders.length;
-  const revenueGhs = rawOrders.reduce(
+  const revenueOrders = rawOrders.filter(isRevenueCountable);
+  const ordersPaid = revenueOrders.length;
+  const revenueGhs = revenueOrders.reduce(
     (acc, o) => acc + o.total_pesewas / 100,
     0,
   );
 
   let cupsUsed = 0;
   for (const o of rawOrders) {
-    for (const item of o.items) {
-      // A cup is used for every non-shawarma item quantity
-      if (
-        item.product_id === null ||
-        !shawarmaProductIds.has(item.product_id)
-      ) {
-        cupsUsed += item.quantity;
-      }
-    }
+    cupsUsed += countCupsInOrder(
+      o.items,
+      shawarmaProductIds,
+      o.status,
+      o.payment_status,
+    );
   }
 
   // ── Payment method breakdown ──────────────────────────────────────────────
@@ -179,7 +165,7 @@ export async function GET(req: NextRequest) {
     { method: PaymentMethod; orders: number; revenueGhs: number }
   >();
 
-  for (const o of rawOrders) {
+  for (const o of revenueOrders) {
     const method = o.payment_method;
     const existing = methodMap.get(method);
     const amount = o.total_pesewas / 100;
@@ -200,7 +186,8 @@ export async function GET(req: NextRequest) {
 
   return NextResponse.json({
     date: todayStart.toISOString().split("T")[0],
-    ordersCompleted,
+    ordersPaid,
+    ordersCompleted: ordersPaid,
     cupsUsed,
     revenueGhs: Math.round(revenueGhs * 100) / 100,
     paymentBreakdown,

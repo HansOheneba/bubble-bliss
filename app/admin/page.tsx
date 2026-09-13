@@ -1,13 +1,14 @@
 import { Suspense } from "react";
 import { createAdminClient } from "@/lib/supabase";
 import { fetchAllPages } from "@/lib/supabase-fetch";
+import { fetchShawarmaProductIdsOrThrow } from "@/lib/shawarma-products";
 import type { OrderWithItems } from "@/lib/database.types";
 import DashboardClient from "./dashboard-client";
 
 async function fetchDashboardData() {
   const supabase = createAdminClient();
 
-  const [orders, productsResult, toppingsResult, categoriesResult] =
+  const [orders, productsResult, toppingsResult, shawarmaProductIds] =
     await Promise.all([
       fetchAllPages<OrderWithItems>((from, to) =>
         supabase
@@ -23,22 +24,8 @@ async function fetchDashboardData() {
       ),
       supabase.from("products").select("id, is_active, in_stock"),
       supabase.from("toppings").select("id, is_active, in_stock"),
-      supabase.from("categories").select("id, slug"),
+      fetchShawarmaProductIdsOrThrow(supabase),
     ]);
-
-  const shawarmaCategory = (
-    categoriesResult.data as { id: number; slug: string }[] | null
-  )?.find((c) => c.slug === "shawarma");
-
-  let shawarmaProductIds: number[] = [];
-  if (shawarmaCategory) {
-    const { data: shawarmaProducts } = await supabase
-      .from("products")
-      .select("id")
-      .eq("category_id", shawarmaCategory.id);
-    shawarmaProductIds =
-      (shawarmaProducts as { id: number }[] | null)?.map((p) => p.id) ?? [];
-  }
 
   return {
     orders,

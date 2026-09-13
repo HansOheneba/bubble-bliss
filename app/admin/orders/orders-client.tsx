@@ -33,8 +33,12 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { ChevronDown, Search, X } from "lucide-react";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
-import { supabase } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
+import {
+  countCupsInOrder,
+  lineTotalPesewas,
+  orderTotalMismatchPesewas,
+} from "@/lib/order-metrics";
 import type { OrderWithItems } from "@/lib/database.types";
 
 type OrderStatus =
@@ -42,11 +46,12 @@ type OrderStatus =
   | "confirmed"
   | "preparing"
   | "ready"
-  | "delivered"
+  | "completed"
   | "cancelled";
 
 type Props = {
   initialOrders: OrderWithItems[];
+  shawarmaProductIds: number[];
 };
 
 function formatMoney(pesewas: number) {
@@ -80,6 +85,8 @@ const STATUS_STYLES: Record<string, string> = {
     "bg-orange-100 text-orange-800 dark:bg-orange-950/50 dark:text-orange-400 dark:border dark:border-orange-800/50",
   ready:
     "bg-green-100 text-green-800 dark:bg-green-950/50 dark:text-green-400 dark:border dark:border-green-800/50",
+  completed:
+    "bg-slate-100 text-slate-600 dark:bg-slate-800/50 dark:text-slate-400 dark:border dark:border-slate-700/50",
   delivered:
     "bg-slate-100 text-slate-600 dark:bg-slate-800/50 dark:text-slate-400 dark:border dark:border-slate-700/50",
   cancelled:
@@ -121,7 +128,7 @@ const ALL_STATUSES: OrderStatus[] = [
   "confirmed",
   "preparing",
   "ready",
-  "delivered",
+  "completed",
   "cancelled",
 ];
 
@@ -129,8 +136,8 @@ const STATUS_TRANSITIONS: Record<OrderStatus, OrderStatus[]> = {
   pending: ["confirmed", "cancelled"],
   confirmed: ["preparing", "cancelled"],
   preparing: ["ready", "cancelled"],
-  ready: ["delivered", "cancelled"],
-  delivered: [],
+  ready: ["completed", "cancelled"],
+  completed: [],
   cancelled: ["pending"],
 };
 
@@ -140,13 +147,16 @@ function statusRank(status: string): number {
     confirmed: 1,
     preparing: 2,
     ready: 3,
-    delivered: 4,
+    completed: 4,
     cancelled: 5,
   };
   return ranks[status] ?? 99;
 }
 
-export default function OrdersClient({ initialOrders }: Props) {
+export default function OrdersClient({
+  initialOrders,
+  shawarmaProductIds,
+}: Props) {
   const searchParams = useSearchParams();
   const router = useRouter();
   const pathname = usePathname();
@@ -189,6 +199,7 @@ export default function OrdersClient({ initialOrders }: Props) {
   const [open, setOpen] = React.useState(false);
   const [activeOrderId, setActiveOrderId] = React.useState<number | null>(null);
   const [updatingId, setUpdatingId] = React.useState<number | null>(null);
+  const [statusError, setStatusError] = React.useState<string | null>(null);
 
   const branches = React.useMemo(() => {
     const seen = new Set<string>();
@@ -198,10 +209,31 @@ export default function OrdersClient({ initialOrders }: Props) {
     return Array.from(seen);
   }, [orders]);
 
+  const shawarmaIdSet = React.useMemo(
+    () => new Set(shawarmaProductIds),
+    [shawarmaProductIds],
+  );
+
   const activeOrder = React.useMemo(
     () => orders.find((o) => o.id === activeOrderId) ?? null,
     [orders, activeOrderId],
   );
+
+  const activeOrderMismatch = activeOrder
+    ? orderTotalMismatchPesewas(
+        activeOrder.total_pesewas,
+        activeOrder.items ?? [],
+      )
+    : 0;
+
+  const activeOrderCups = activeOrder
+    ? countCupsInOrder(
+        activeOrder.items ?? [],
+        shawarmaIdSet,
+        activeOrder.status,
+        activeOrder.payment_status,
+      )
+    : 0;
 
   const filtered = React.useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -294,17 +326,31 @@ export default function OrdersClient({ initialOrders }: Props) {
 
   async function updateOrderStatus(orderId: number, status: OrderStatus) {
     setUpdatingId(orderId);
-    const { error } = await supabase
-      .from("orders")
-      .update({ status, updated_at: new Date().toISOString() } as never)
-      .eq("id", orderId);
+    setStatusError(null);
 
-    if (!error) {
+    try {
+      const res = await fetch(`/api/admin/orders/${orderId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status }),
+      });
+
+      if (!res.ok) {
+        const body = (await res.json().catch(() => null)) as {
+          message?: string;
+        } | null;
+        setStatusError(body?.message ?? "Failed to update order status.");
+        return;
+      }
+
       setOrders((prev) =>
         prev.map((o) => (o.id === orderId ? { ...o, status } : o)),
       );
+    } catch {
+      setStatusError("Failed to update order status. Check your connection.");
+    } finally {
+      setUpdatingId(null);
     }
-    setUpdatingId(null);
   }
 
   return (
@@ -605,6 +651,7 @@ export default function OrdersClient({ initialOrders }: Props) {
                   activeOrderId === order.id && "bg-accent",
                 )}
                 onClick={() => {
+                  setStatusError(null);
                   setActiveOrderId(order.id);
                   setOpen(true);
                 }}
@@ -634,7 +681,20 @@ export default function OrdersClient({ initialOrders }: Props) {
                   <PaymentBadge status={order.payment_status ?? "unpaid"} />
                 </TableCell>
                 <TableCell className="font-medium">
-                  {formatMoney(order.total_pesewas)}
+                  <div className="flex items-center justify-end gap-2">
+                    {formatMoney(order.total_pesewas)}
+                    {orderTotalMismatchPesewas(
+                      order.total_pesewas,
+                      order.items ?? [],
+                    ) !== 0 && (
+                      <Badge
+                        variant="default"
+                        className="bg-red-100 text-red-800 dark:bg-red-950/50 dark:text-red-400"
+                      >
+                        mismatch
+                      </Badge>
+                    )}
+                  </div>
                 </TableCell>
                 <TableCell>
                   <StatusBadge status={order.status ?? "pending"} />
@@ -690,13 +750,30 @@ export default function OrdersClient({ initialOrders }: Props) {
                     {activeOrder.order_number ?? `#${activeOrder.id}`}
                   </div>
                 </div>
-                <div className="flex gap-2">
+                <div className="flex flex-wrap gap-2">
                   <PaymentBadge
                     status={activeOrder.payment_status ?? "unpaid"}
                   />
                   <StatusBadge status={activeOrder.status ?? "pending"} />
+                  {activeOrderMismatch !== 0 && (
+                    <Badge
+                      variant="default"
+                      className="bg-red-100 text-red-800 dark:bg-red-950/50 dark:text-red-400 dark:border dark:border-red-800/50"
+                    >
+                      Items mismatch
+                    </Badge>
+                  )}
                 </div>
               </div>
+
+              {activeOrderMismatch !== 0 && (
+                <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300">
+                  Saved line items total{" "}
+                  {formatMoney(activeOrder.total_pesewas - activeOrderMismatch)},
+                  but order total is {formatMoney(activeOrder.total_pesewas)}.
+                  Some items may be missing from this order.
+                </div>
+              )}
 
               <Separator />
 
@@ -745,7 +822,12 @@ export default function OrdersClient({ initialOrders }: Props) {
 
               {/* Items */}
               <div className="space-y-2">
-                <div className="text-sm font-medium">Items</div>
+                <div className="flex items-center justify-between gap-2">
+                  <div className="text-sm font-medium">Items</div>
+                  <div className="text-sm text-muted-foreground">
+                    Cups: {activeOrderCups}
+                  </div>
+                </div>
                 <div className="rounded-lg border overflow-hidden">
                   <Table>
                     <TableHeader>
@@ -796,7 +878,7 @@ export default function OrdersClient({ initialOrders }: Props) {
                               {formatMoney(item.unit_pesewas)}
                             </TableCell>
                             <TableCell className="text-right font-medium">
-                              {formatMoney(item.unit_pesewas * item.quantity)}
+                              {formatMoney(lineTotalPesewas(item))}
                             </TableCell>
                           </TableRow>
                         </React.Fragment>
@@ -812,6 +894,12 @@ export default function OrdersClient({ initialOrders }: Props) {
                   {formatMoney(activeOrder.total_pesewas)}
                 </div>
               </div>
+
+              {statusError && (
+                <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300">
+                  {statusError}
+                </div>
+              )}
 
               {/* Status actions */}
               <DialogFooter className="gap-2 flex-wrap sm:flex-row">

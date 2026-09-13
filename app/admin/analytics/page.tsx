@@ -8,6 +8,12 @@ import type {
   OrderItem,
   OrderItemTopping,
 } from "@/lib/database.types";
+import {
+  countCupsInOrder,
+  isRevenueCountable,
+  itemRevenueGhs,
+} from "@/lib/order-metrics";
+import { fetchShawarmaProductIds } from "@/lib/shawarma-products";
 import AnalyticsClient from "./analytics-client";
 
 type TellerWithBranch = Teller & { branch: Branch | null };
@@ -90,7 +96,7 @@ export type CustomerStat = {
 async function fetchAnalyticsData() {
   const db = createAdminClient();
 
-  const [rawOrders, { data: rawCategories }] = await Promise.all([
+  const [rawOrders, shawarmaProductIds] = await Promise.all([
     fetchAllPages<FullOrder>((from, to) =>
       db
         .from("orders")
@@ -103,64 +109,36 @@ async function fetchAnalyticsData() {
         error: { message: string } | null;
       }>,
     ),
-    db.from("categories").select("id, slug"),
+    fetchShawarmaProductIds(db),
   ]);
 
   const orders = rawOrders;
 
-  // ── Cups used (all-time, non-shawarma completed orders) ─────────────────
-  const shawarmaCategory = (
-    rawCategories as { id: number; slug: string }[] | null
-  )?.find((c) => c.slug === "shawarma");
-
-  const shawarmaProductIds = new Set<number>();
-  if (shawarmaCategory) {
-    const { data: shawarmaProducts } = await db
-      .from("products")
-      .select("id")
-      .eq("category_id", shawarmaCategory.id);
-    for (const p of (shawarmaProducts ?? []) as { id: number }[]) {
-      shawarmaProductIds.add(p.id);
-    }
-  }
-
   let cupsUsed = 0;
   for (const o of orders) {
-    if (o.status !== "completed") continue;
-    for (const item of o.items) {
-      if (
-        item.product_id === null ||
-        !shawarmaProductIds.has(item.product_id)
-      ) {
-        cupsUsed += item.quantity;
-      }
-    }
+    cupsUsed += countCupsInOrder(
+      o.items,
+      shawarmaProductIds,
+      o.status,
+      o.payment_status,
+    );
   }
 
-  // ── Slim orders for client-side time-series ──────────────────────────────
-  const slimOrders: SlimOrder[] = orders.map((o) => {
-    let cupsInOrder = 0;
-    if (o.status === "completed") {
-      for (const item of o.items) {
-        if (
-          item.product_id === null ||
-          !shawarmaProductIds.has(item.product_id)
-        ) {
-          cupsInOrder += item.quantity;
-        }
-      }
-    }
-    return {
-      id: o.id,
-      createdAt: o.created_at ?? new Date().toISOString(),
-      totalGhs: o.total_pesewas / 100,
-      status: o.status ?? "pending",
-      branchName: o.branch?.name ?? "Unknown",
-      cupsInOrder,
-      paymentMethod: o.payment_method ?? "hubtel",
-      paymentStatus: o.payment_status ?? "pending",
-    };
-  });
+  const slimOrders: SlimOrder[] = orders.map((o) => ({
+    id: o.id,
+    createdAt: o.created_at ?? new Date().toISOString(),
+    totalGhs: o.total_pesewas / 100,
+    status: o.status ?? "pending",
+    branchName: o.branch?.name ?? "Unknown",
+    cupsInOrder: countCupsInOrder(
+      o.items,
+      shawarmaProductIds,
+      o.status,
+      o.payment_status,
+    ),
+    paymentMethod: o.payment_method ?? "hubtel",
+    paymentStatus: o.payment_status ?? "unpaid",
+  }));
 
   // ── Shawarma item slim data for client-side range + branch filtering ─────
   const slimShawarmaItems: SlimShawarmaItem[] = [];
@@ -174,7 +152,7 @@ async function fetchAnalyticsData() {
           productName: item.product_name,
           variantLabel: item.variant_label ?? "Regular",
           qty: item.quantity,
-          revenueGhs: (item.unit_pesewas * item.quantity) / 100,
+          revenueGhs: itemRevenueGhs(item),
         });
       }
     }
@@ -183,6 +161,7 @@ async function fetchAnalyticsData() {
   // ── Revenue + orders by branch ───────────────────────────────────────────
   const branchMap = new Map<string, { orders: number; revenueGhs: number }>();
   for (const o of orders) {
+    if (!isRevenueCountable(o)) continue;
     const name = o.branch?.name ?? "Unknown";
     const cur = branchMap.get(name) ?? { orders: 0, revenueGhs: 0 };
     cur.orders += 1;
@@ -196,13 +175,14 @@ async function fetchAnalyticsData() {
   // ── Top products by units sold ───────────────────────────────────────────
   const productMap = new Map<string, { qty: number; revenueGhs: number }>();
   for (const o of orders) {
+    if (!isRevenueCountable(o)) continue;
     for (const item of o.items) {
       const cur = productMap.get(item.product_name) ?? {
         qty: 0,
         revenueGhs: 0,
       };
       cur.qty += item.quantity;
-      cur.revenueGhs += (item.unit_pesewas * item.quantity) / 100;
+      cur.revenueGhs += itemRevenueGhs(item);
       productMap.set(item.product_name, cur);
     }
   }
@@ -257,7 +237,7 @@ async function fetchAnalyticsData() {
   }
 
   for (const o of orders) {
-    if (!o.teller_id) continue;
+    if (!o.teller_id || !isRevenueCountable(o)) continue;
     const acc = tellerAccumMap.get(o.teller_id);
     if (!acc) continue;
     acc.orders += 1;
@@ -336,13 +316,22 @@ async function fetchAnalyticsData() {
     const acc = perBranchAccum.get(branchName);
     if (!acc) continue;
 
+    acc.cupsUsed += countCupsInOrder(
+      o.items,
+      shawarmaProductIds,
+      o.status,
+      o.payment_status,
+    );
+
+    if (!isRevenueCountable(o)) continue;
+
     for (const item of o.items) {
       const cur = acc.productMap.get(item.product_name) ?? {
         qty: 0,
         revenueGhs: 0,
       };
       cur.qty += item.quantity;
-      cur.revenueGhs += (item.unit_pesewas * item.quantity) / 100;
+      cur.revenueGhs += itemRevenueGhs(item);
       acc.productMap.set(item.product_name, cur);
 
       for (const t of item.toppings) {
@@ -350,15 +339,6 @@ async function fetchAnalyticsData() {
           t.topping_name,
           (acc.toppingMap.get(t.topping_name) ?? 0) + 1,
         );
-      }
-
-      if (o.status === "completed") {
-        if (
-          item.product_id === null ||
-          !shawarmaProductIds.has(item.product_id)
-        ) {
-          acc.cupsUsed += item.quantity;
-        }
       }
     }
 
@@ -404,7 +384,7 @@ async function fetchAnalyticsData() {
   const customerMap = new Map<string, CustomerAccum>();
   for (const o of orders) {
     const phone = o.phone?.trim();
-    if (!phone) continue;
+    if (!phone || !isRevenueCountable(o)) continue;
     const cur = customerMap.get(phone) ?? {
       name: o.customer_name ?? phone,
       orders: 0,

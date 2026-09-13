@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { isCupCountableStatus } from "@/lib/order-metrics";
 import {
   Area,
   AreaChart,
@@ -169,8 +170,8 @@ function computeRangeMetrics(
   const totalOrders = filteredOrders.length;
   const revenueGhs = filteredOrders.reduce((acc, o) => acc + o.totalGhs, 0);
   const avgOrderValue = totalOrders > 0 ? revenueGhs / totalOrders : 0;
-  const completedOrders = filteredOrders.filter(
-    (o) => o.status === "completed",
+  const completedOrders = filteredOrders.filter((o) =>
+    isCupCountableStatus(o.status),
   ).length;
   const cupsUsed = filteredOrders.reduce((acc, o) => acc + o.cupsInOrder, 0);
 
@@ -449,8 +450,8 @@ export default function AnalyticsClient({
     0,
   );
   const avgOrderValue = totalOrders > 0 ? totalRevenueGhs / totalOrders : 0;
-  const completedInRange = rangeActiveOrders.filter(
-    (o) => o.status === "completed",
+  const completedInRange = rangeActiveOrders.filter((o) =>
+    isCupCountableStatus(o.status),
   ).length;
 
   // ── Payment breakdown (range + branch filtered, paid only) ──────────────

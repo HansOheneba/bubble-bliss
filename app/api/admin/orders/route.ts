@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase";
+import {
+  hasOrderTotalMismatch,
+  orderItemsTotalPesewas,
+} from "@/lib/order-metrics";
 import type {
   Order,
   OrderItem,
@@ -106,7 +110,9 @@ export async function GET(req: NextRequest) {
 
   const orders = (rawOrders ?? []) as unknown as OrderRow[];
 
-  const shaped = orders.map((o) => ({
+  const shaped = orders.map((o) => {
+    const itemsTotalPesewas = orderItemsTotalPesewas(o.items);
+    return {
     id: o.id,
     orderNumber: o.order_number,
     clientReference: o.client_reference,
@@ -119,6 +125,10 @@ export async function GET(req: NextRequest) {
     orderSource: o.order_source,
     totalGhs: o.total_pesewas / 100,
     totalPesewas: o.total_pesewas,
+    itemsTotalGhs: itemsTotalPesewas / 100,
+    itemsTotalPesewas,
+    itemCount: o.items.length,
+    hasTotalMismatch: hasOrderTotalMismatch(o.total_pesewas, o.items),
     createdAt: o.created_at,
     updatedAt: o.updated_at,
     branch: o.branch
@@ -148,7 +158,8 @@ export async function GET(req: NextRequest) {
         priceAppliedPesewas: t.price_applied_pesewas,
       })),
     })),
-  }));
+  };
+  });
 
   return NextResponse.json({
     orders: shaped,

@@ -9,6 +9,7 @@ type OrderStatus =
   | "preparing"
   | "ready"
   | "completed"
+  | "delivered"
   | "cancelled";
 type PaymentStatus = "unpaid" | "paid" | "failed";
 
@@ -26,6 +27,7 @@ const VALID_STATUSES: OrderStatus[] = [
   "preparing",
   "ready",
   "completed",
+  "delivered",
   "cancelled",
 ];
 const VALID_PAYMENT_STATUSES: PaymentStatus[] = ["unpaid", "paid", "failed"];
