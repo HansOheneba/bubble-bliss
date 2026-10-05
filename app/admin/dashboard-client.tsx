@@ -62,8 +62,31 @@ type ToppingRow = {
   in_stock: boolean | null;
 };
 
+export type RecentOrder = {
+  id: number;
+  order_number: string | null;
+  customer_name: string | null;
+  phone: string | null;
+  status: string | null;
+  total_pesewas: number;
+  created_at: string | null;
+  branch: { name: string } | null;
+};
+
+export type StatusCounts = {
+  completed: number;
+  preparing: number;
+  pending: number;
+  cancelled: number;
+  ready: number;
+};
+
 type Props = {
   orders: OrderWithItems[];
+  recentOrders: RecentOrder[];
+  openOrderCount: number;
+  statusCounts: StatusCounts;
+  branches: string[];
   products: ProductRow[];
   toppings: ToppingRow[];
   shawarmaProductIds: number[];
@@ -140,6 +163,10 @@ function StatusBadge({ status }: { status: string }) {
 
 export default function DashboardClient({
   orders,
+  recentOrders,
+  openOrderCount,
+  statusCounts,
+  branches,
   products,
   toppings,
   shawarmaProductIds,
@@ -167,10 +194,6 @@ export default function DashboardClient({
     searchParams.get("branch") ?? "all",
   );
 
-  const branches = [...new Set(orders.map((o) => o.branch?.name ?? "Unknown"))]
-    .filter(Boolean)
-    .sort();
-
   const [dayStart, dayEnd] = getDayBoundsUtc(selectedDate);
   const rangeOrders = orders.filter((o) => {
     const d = o.created_at ? new Date(o.created_at) : null;
@@ -183,15 +206,6 @@ export default function DashboardClient({
   const rangeRevenuePaid = rangeOrders
     .filter((o) => o.payment_status === "paid")
     .reduce((acc, o) => acc + pesewasToGhs(o.total_pesewas), 0);
-
-  const [todayStart] = getDayBoundsUtc(ghanaToday());
-  const openOrders = orders.filter(
-    (o) =>
-      (o.status === "pending" ||
-        o.status === "confirmed" ||
-        o.status === "preparing") &&
-      (o.created_at ? new Date(o.created_at) >= todayStart : false),
-  );
 
   const shawarmaIdSet = new Set(shawarmaProductIds);
 
@@ -277,8 +291,6 @@ export default function DashboardClient({
     branchCounts[branchName] = (branchCounts[branchName] ?? 0) + 1;
   }
 
-  const recentOrders = orders.slice(0, 10);
-
   const rangeSeries = buildDaySeries(selectedDate, orders, {
     getDate: (o) => new Date(o.created_at ?? 0),
     getRevenue: (o) =>
@@ -303,29 +315,27 @@ export default function DashboardClient({
   const statusSegments = [
     {
       label: "Completed",
-      value: orders.filter(
-        (o) => o.status === "completed" || o.status === "delivered",
-      ).length,
+      value: statusCounts.completed,
       color: "var(--color-chart-1)",
     },
     {
       label: "Preparing",
-      value: orders.filter((o) => o.status === "preparing").length,
+      value: statusCounts.preparing,
       color: "var(--color-chart-2)",
     },
     {
       label: "Pending",
-      value: orders.filter((o) => o.status === "pending").length,
+      value: statusCounts.pending,
       color: "var(--color-chart-3)",
     },
     {
       label: "Cancelled",
-      value: orders.filter((o) => o.status === "cancelled").length,
+      value: statusCounts.cancelled,
       color: "var(--color-chart-4)",
     },
     {
       label: "Ready",
-      value: orders.filter((o) => o.status === "ready").length,
+      value: statusCounts.ready,
       color: "var(--color-chart-5)",
     },
   ];
@@ -417,7 +427,7 @@ export default function DashboardClient({
             Open Orders Today
           </div>
           <div className="mt-2 text-2xl font-bold text-foreground sm:text-3xl">
-            {openOrders.length}
+            {openOrderCount}
           </div>
           <div className="mt-1 text-xs text-muted-foreground">
             Pending + Preparing
