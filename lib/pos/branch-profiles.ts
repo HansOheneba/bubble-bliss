@@ -1,6 +1,6 @@
 // Receipt details per branch for the v1 POS app.
 // Kept in code (not the database) so the live `branches` table is untouched.
-// Fill in Accra's address and phone when known; empty values are simply not printed.
+// Empty (null) values are simply not printed.
 
 export type BranchProfile = {
   receiptTitle: string;
@@ -20,8 +20,8 @@ const PROFILES: Record<string, BranchProfile> = {
   },
   accra: {
     receiptTitle: "Bubble Bliss Accra",
-    address: null,
-    phone: null,
+    address: "North Kaneshie, Accra",
+    phone: "0593530806",
     footerLines: BRAND_FOOTER,
   },
 };
