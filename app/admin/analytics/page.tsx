@@ -12,6 +12,7 @@ import {
 import { requireAdmin } from "@/lib/admin/auth";
 import { clock, money, paymentName, plural, shortDay } from "@/lib/admin/format";
 import { getBranches, getMonthlyHistory } from "@/lib/admin/queries";
+import { ghanaToday } from "@/lib/range-metrics";
 import { compareChoices, getCompare, getSalesView, type CompareMode, type PeriodKey } from "@/lib/admin/sales";
 import { Change, MonthBars } from "@/components/admin/glance";
 import CompareControls from "./compare-controls";
@@ -106,6 +107,7 @@ export default async function SalesPage({ searchParams }: PageProps) {
         ...row,
         money: money(row.pesewas),
         previous: values[index + 1] ?? null,
+        partial: row.key === ghanaToday().slice(0, 7),
       }));
     };
     return (
@@ -431,6 +433,7 @@ export default async function SalesPage({ searchParams }: PageProps) {
               ...current,
               money: money(current.pesewas),
               previous: history[index + 1] ? pick(history[index + 1]) : null,
+              partial: row.month === ghanaToday().slice(0, 7),
             };
           })}
         />

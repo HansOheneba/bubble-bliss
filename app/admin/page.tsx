@@ -158,6 +158,7 @@ export default async function TodayPage({ searchParams }: PageProps) {
     ...row,
     money: money(row.pesewas),
     previous: monthValues[index + 1] ?? null,
+    partial: row.key === today.slice(0, 7),
   }));
 
   // Tonight so far is compared with the same point in the evening that day.
