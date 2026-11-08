@@ -105,12 +105,12 @@ export function PaceChart({
   );
 }
 
-/** Three numbers, nothing else. */
+/** The counts he checks most, nothing else. */
 export function StatStrip({ stats }: { stats: { label: string; value: ReactNode }[] }) {
   return (
-    <dl className="grid grid-cols-3 border-y border-dashed divide-x divide-dashed">
+    <dl className="grid grid-cols-2 border-t border-l border-dashed sm:grid-cols-4">
       {stats.map((stat) => (
-        <div key={stat.label} className="px-3 py-3 first:pl-0">
+        <div key={stat.label} className="px-3 py-3 border-b border-r border-dashed">
           <dd className="text-2xl font-bold tracking-tight font-display tabular-nums">{stat.value}</dd>
           <dt className="text-xs text-muted-foreground">{stat.label}</dt>
         </div>

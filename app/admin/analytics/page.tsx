@@ -131,6 +131,37 @@ export default async function SalesPage({ searchParams }: PageProps) {
       )}
 
       <div className="grid gap-8 md:grid-cols-2 md:gap-x-12">
+        <Section
+          title="Shawarma"
+          note={summary.shawarma.qty > 0 ? `${summary.shawarma.qty.toLocaleString("en-GH")} sold, ${money(summary.shawarma.pesewas)}` : undefined}
+        >
+          {summary.shawarma.qty === 0 ? (
+            <Empty>No shawarma sold in this period.</Empty>
+          ) : (
+            <Ledger>
+              {summary.shawarma.sizes.map((row) => (
+                <LedgerRow key={row.size} label={row.size} value={row.qty.toLocaleString("en-GH")} strong />
+              ))}
+              <Rule className="my-1" />
+              {summary.shawarma.items.map((item) => (
+                <LedgerRow
+                  key={`${item.name}${item.size}`}
+                  label={item.name}
+                  detail={item.size ?? undefined}
+                  value={`${item.qty.toLocaleString("en-GH")} sold`}
+                />
+              ))}
+            </Ledger>
+          )}
+        </Section>
+
+        <Section title="Drinks and food">
+          <Ledger>
+            <LedgerRow label="Drinks" detail={`${summary.drinks.qty.toLocaleString("en-GH")} sold`} value={money(summary.drinks.pesewas)} />
+            <LedgerRow label="Shawarma" detail={`${summary.shawarma.qty.toLocaleString("en-GH")} sold`} value={money(summary.shawarma.pesewas)} />
+          </Ledger>
+        </Section>
+
         <Section title="How people paid">
           <Ledger>
             {summary.methods.map((row) => (

@@ -39,7 +39,16 @@ export type SlimOrder = {
 export type Row = { key: string; label: string; orders: number; pesewas: number };
 export type ItemRow = { name: string; size: string | null; qty: number; pesewas: number };
 
+export type FoodSplit = {
+  qty: number;
+  pesewas: number;
+  sizes: { size: string; qty: number }[];
+  items: ItemRow[];
+};
+
 export type Summary = {
+  shawarma: FoodSplit;
+  drinks: { qty: number; pesewas: number };
   pesewas: number;
   orders: number;
   cups: number;
@@ -210,6 +219,8 @@ export async function summarize(
   const tellers = new Map<string, Row>();
   const items = new Map<string, ItemRow>();
   const toppings = new Map<string, number>();
+  const shawarmaItems = new Map<string, ItemRow>();
+  const drinks = { qty: 0, pesewas: 0 };
   const hours = Array.from({ length: 24 }, (_, hour) => ({ hour, pesewas: 0, orders: 0 }));
 
   let pesewas = 0;
@@ -261,15 +272,43 @@ export async function summarize(
       };
       const toppingTotal = item.toppings.reduce((s, t) => s + t.price_applied_pesewas, 0);
       row.qty += item.quantity;
-      row.pesewas += (item.unit_pesewas + toppingTotal) * item.quantity;
+      const lineTotal = (item.unit_pesewas + toppingTotal) * item.quantity;
+      row.pesewas += lineTotal;
       items.set(key, row);
+
+      if (item.product_id !== null && shawarmaIds.has(item.product_id)) {
+        const size = item.variant_label ?? "Regular";
+        const food = shawarmaItems.get(key) ?? { name: item.product_name, size, qty: 0, pesewas: 0 };
+        food.qty += item.quantity;
+        food.pesewas += lineTotal;
+        shawarmaItems.set(key, food);
+      } else {
+        drinks.qty += item.quantity;
+        drinks.pesewas += lineTotal;
+      }
       for (const topping of item.toppings) {
         toppings.set(topping.topping_name, (toppings.get(topping.topping_name) ?? 0) + 1);
       }
     }
   }
 
+  const shawarmaRows = [...shawarmaItems.values()].sort((a, b) => b.qty - a.qty);
+  const sizes = new Map<string, number>();
+  for (const row of shawarmaRows) {
+    const size = row.size ?? "Regular";
+    sizes.set(size, (sizes.get(size) ?? 0) + row.qty);
+  }
+
   return {
+    shawarma: {
+      qty: shawarmaRows.reduce((sum, row) => sum + row.qty, 0),
+      pesewas: shawarmaRows.reduce((sum, row) => sum + row.pesewas, 0),
+      sizes: [...sizes.entries()]
+        .map(([size, qty]) => ({ size, qty }))
+        .sort((a, b) => b.qty - a.qty),
+      items: shawarmaRows,
+    },
+    drinks,
     pesewas,
     orders: count,
     cups,
