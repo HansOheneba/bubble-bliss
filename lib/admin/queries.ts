@@ -100,7 +100,7 @@ const getTellerNames = unstable_cache(
   { revalidate: 300 },
 );
 
-const getShawarmaIds = unstable_cache(
+export const getShawarmaIds = unstable_cache(
   async (): Promise<number[]> => [...(await fetchShawarmaProductIds(createAdminClient()))],
   ["admin-shawarma-ids"],
   { revalidate: 300 },
@@ -116,6 +116,22 @@ export const getProductImages = unstable_cache(
   },
   ["admin-product-images"],
   { revalidate: 300 },
+);
+
+export type TellerInfo = { id: number; name: string; isActive: boolean; branchId: number | null };
+
+export const getAllTellers = unstable_cache(
+  async (): Promise<TellerInfo[]> => {
+    const { data, error } = await createAdminClient()
+      .from("tellers")
+      .select("id, name, is_active, branch_id")
+      .order("name");
+    if (error) throw new Error(`Tellers: ${error.message}`);
+    const rows = (data ?? []) as { id: number; name: string; is_active: boolean; branch_id: number | null }[];
+    return rows.map((t) => ({ id: t.id, name: t.name, isActive: t.is_active, branchId: t.branch_id }));
+  },
+  ["admin-all-tellers"],
+  { revalidate: 120 },
 );
 
 // ── Reading orders for a period ───────────────────────────────────────────────
@@ -269,7 +285,7 @@ export async function summarize(
       tellers,
       String(order.teller_id ?? "none"),
       order.teller_id === null
-        ? "No cashier recorded"
+        ? "No teller recorded"
         : (tellerNames[String(order.teller_id)] ?? "Former cashier"),
       order.total_pesewas,
     );
@@ -398,7 +414,7 @@ export const getMonthlyHistory = unstable_cache(
 // ── The Orders screen ─────────────────────────────────────────────────────────
 
 export const ORDER_DETAIL_SELECT =
-  "id, order_number, created_at, total_pesewas, status, payment_method, payment_status, order_source, phone, customer_name, location_text, notes, teller_id, branch_id, branch:branches(name), teller:tellers(name), items:order_items(id, product_name, variant_label, quantity, unit_pesewas, sugar_level, spice_level, note, toppings:order_item_toppings(topping_name, price_applied_pesewas))";
+  "id, order_number, created_at, total_pesewas, status, payment_method, payment_status, order_source, phone, customer_name, location_text, notes, teller_id, branch_id, branch:branches(name), teller:tellers(name), items:order_items(id, product_id, product_name, variant_label, quantity, unit_pesewas, sugar_level, spice_level, note, toppings:order_item_toppings(topping_name, price_applied_pesewas))";
 
 export type OrderDetail = {
   id: number;
@@ -419,6 +435,7 @@ export type OrderDetail = {
   teller: { name: string } | null;
   items: {
     id: string;
+    product_id: number | null;
     product_name: string;
     variant_label: string | null;
     quantity: number;
@@ -434,7 +451,8 @@ export type OrderFilters = {
   from: Date | null;
   to: Date | null;
   branchId: number | null;
-  show: "all" | "open" | "unpaid" | "completed" | "cancelled";
+  show: "all" | "open" | "unpaid" | "paid" | "completed" | "cancelled";
+  oldestFirst: boolean;
   payment: string | null;
   source: string | null;
   search: string;
@@ -469,14 +487,15 @@ export async function fetchOrders(
   let query = db
     .from("orders")
     .select(ORDER_DETAIL_SELECT, { count: "exact" })
-    .order("created_at", { ascending: false })
-    .order("id", { ascending: false })
+    .order("created_at", { ascending: filters.oldestFirst })
+    .order("id", { ascending: filters.oldestFirst })
     .limit(filters.limit);
 
   if (filters.from) query = query.gte("created_at", filters.from.toISOString());
   if (filters.to) query = query.lt("created_at", filters.to.toISOString());
   if (filters.branchId !== null) query = query.eq("branch_id", filters.branchId);
   if (filters.show === "open") query = query.in("status", OPEN_STATUSES);
+  if (filters.show === "paid") query = query.eq("payment_status", "paid");
   if (filters.show === "completed") query = query.in("status", ["completed", "delivered"]);
   if (filters.show === "cancelled") query = query.eq("status", "cancelled");
   if (filters.payment) query = query.eq("payment_method", filters.payment);
@@ -490,6 +509,7 @@ export async function fetchOrders(
       `order_number.ilike.${like}`,
       `customer_name.ilike.${like}`,
       `phone.ilike.${like}`,
+      `location_text.ilike.${like}`,
     ];
     if (itemMatches.length > 0) conditions.push(`id.in.(${itemMatches.join(",")})`);
     query = query.or(conditions.join(","));

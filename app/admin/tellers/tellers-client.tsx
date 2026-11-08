@@ -163,13 +163,13 @@ export default function TellersClient({ initialTellers, branches }: Props) {
           action={
             <Button onClick={openCreate} className="gap-2">
               <Plus className="size-4" aria-hidden />
-              Add cashier
+              Add teller
             </Button>
           }
         />
         <TeamTabs active="cashiers" />
         <p className="text-sm text-muted-foreground">
-          The names staff pick on the tablet. Each sale is recorded against one.
+          Tellers are the names staff pick on the tablet. Each sale is recorded against one.
         </p>
       </div>
 
@@ -177,7 +177,7 @@ export default function TellersClient({ initialTellers, branches }: Props) {
       <div className="space-y-3">
         {active.length === 0 && (
           <p className="text-sm text-muted-foreground py-8 text-center">
-            No cashiers yet. Add the first one.
+            No tellers yet. Add the first one.
           </p>
         )}
         {active.map((t) => (
@@ -214,7 +214,7 @@ export default function TellersClient({ initialTellers, branches }: Props) {
       {inactive.length > 0 && (
         <div className="space-y-2">
           <p className="pt-4 text-sm font-semibold font-display">
-            No longer here
+            Inactive
           </p>
           {inactive.map((t) => (
             <div
@@ -249,7 +249,7 @@ export default function TellersClient({ initialTellers, branches }: Props) {
           className="w-full sm:max-w-md overflow-y-auto"
         >
           <SheetHeader>
-            <SheetTitle>{editing ? "Edit cashier" : "New Teller"}</SheetTitle>
+            <SheetTitle>{editing ? "Edit teller" : "New Teller"}</SheetTitle>
             <SheetDescription>
               {editing
                 ? "Update this teller&apos;s details."
@@ -328,7 +328,7 @@ export default function TellersClient({ initialTellers, branches }: Props) {
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Remove cashier?</AlertDialogTitle>
+            <AlertDialogTitle>Deactivate teller?</AlertDialogTitle>
             <AlertDialogDescription>
               {deactivateTarget?.name} will no longer be able to be assigned to
               orders. You can reactivate them later.

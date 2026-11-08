@@ -71,10 +71,12 @@ type PendingChange =
 function OrderSheet({
   order,
   today,
+  shawarmaIds,
   onClose,
 }: {
   order: OrderDetail | null;
   today: string;
+  shawarmaIds: number[];
   onClose: () => void;
 }) {
   const router = useRouter();
@@ -110,6 +112,13 @@ function OrderSheet({
   const isPaid = order?.payment_status === "paid";
   const isCancelled = order?.status === "cancelled";
   const mismatch = order ? itemsTotal(order) !== order.total_pesewas : false;
+  const cups = order
+    ? order.items.reduce(
+        (sum, item) =>
+          item.product_id !== null && shawarmaIds.includes(item.product_id) ? sum : sum + item.quantity,
+        0,
+      )
+    : 0;
 
   return (
     <>
@@ -143,6 +152,7 @@ function OrderSheet({
                       <Fragment key={item.id}>
                         <LedgerRow
                           label={`${item.quantity} ${item.product_name}`}
+                          detail={item.quantity > 1 ? `${money(item.unit_pesewas + toppings)} each` : undefined}
                           value={money((item.unit_pesewas + toppings) * item.quantity)}
                         />
                         {extras.length > 0 && (
@@ -167,7 +177,9 @@ function OrderSheet({
 
                 <Ledger>
                   <LedgerRow label="Paid by" value={paymentName(order.payment_method)} />
-                  {order.teller && <LedgerRow label="Cashier" value={order.teller.name} />}
+                  <LedgerRow label="Came from" value={order.order_source === "instore" ? "In store" : "Online"} />
+                  <LedgerRow label="Cups" value={cups} />
+                  {order.teller && <LedgerRow label="Teller" value={order.teller.name} />}
                   {order.customer_name && <LedgerRow label="Customer" value={order.customer_name} />}
                   {order.phone && (
                     <LedgerRow
@@ -198,7 +210,7 @@ function OrderSheet({
                       </Button>
                     </div>
                   )}
-                  {isOpen && isPaid && (
+                  {isOpen && (
                     <>
                       <div className="grid grid-cols-3 gap-2">
                         {[
@@ -282,10 +294,12 @@ function OrderSheet({
 export default function OrdersList({
   orders,
   today,
+  shawarmaIds,
   groupByDay,
 }: {
   orders: OrderDetail[];
   today: string;
+  shawarmaIds: number[];
   groupByDay: boolean;
 }) {
   // The list refreshes after a change, so only the id is kept here.
@@ -353,7 +367,7 @@ export default function OrdersList({
         })}
       </ul>
 
-      <OrderSheet order={selected} today={today} onClose={() => setSelectedId(null)} />
+      <OrderSheet order={selected} today={today} shawarmaIds={shawarmaIds} onClose={() => setSelectedId(null)} />
     </>
   );
 }

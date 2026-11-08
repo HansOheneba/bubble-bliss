@@ -4,6 +4,7 @@ import { Loader2, Search } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState, useTransition } from "react";
 
+import { useShowPending } from "@/components/admin/pending";
 import { Input } from "@/components/ui/input";
 
 export default function OrdersSearch({ initial }: { initial: string }) {
@@ -12,6 +13,7 @@ export default function OrdersSearch({ initial }: { initial: string }) {
   const searchParams = useSearchParams();
   const [value, setValue] = useState(initial);
   const [pending, startTransition] = useTransition();
+  useShowPending(pending);
   const timer = useRef<number | null>(null);
 
   useEffect(
