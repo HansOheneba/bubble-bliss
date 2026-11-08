@@ -164,9 +164,6 @@ export default async function TodayPage({ searchParams }: PageProps) {
     lastHour + 1,
   ].map((hour) => hourLabel(hour % 24));
 
-  // Whole cedis: this is a sense of size, and it has to fit a narrow column.
-  const average = summary.orders ? Math.round(summary.pesewas / summary.orders / 100) * 100 : 0;
-
   const query = (next: { date?: string; branch?: string | null }) => {
     const search = new URLSearchParams();
     const nextDate = next.date ?? date;
@@ -275,7 +272,8 @@ export default async function TodayPage({ searchParams }: PageProps) {
       <StatStrip
         stats={[
           { label: "Paid orders", value: summary.orders },
-          { label: "Average", value: money(average) },
+          { label: "Shawarmas sold", value: summary.shawarma.qty },
+          { label: "Drinks sold", value: summary.drinks.qty },
           { label: "Cups used", value: summary.cups },
         ]}
       />
@@ -305,6 +303,44 @@ export default async function TodayPage({ searchParams }: PageProps) {
       )}
 
       <div className="grid gap-8 md:grid-cols-2 md:gap-x-12">
+        <Section
+          title="Shawarma"
+          note={summary.shawarma.qty > 0 ? `${summary.shawarma.qty} sold, ${money(summary.shawarma.pesewas)}` : undefined}
+        >
+          {summary.shawarma.qty === 0 ? (
+            <Empty>No shawarma sold yet.</Empty>
+          ) : (
+            <div className="flex flex-col gap-4">
+              <div className="flex flex-wrap gap-2" aria-label="By size">
+                {summary.shawarma.sizes.map((row) => (
+                  <span key={row.size} className="px-3 py-1.5 text-sm rounded-md bg-secondary">
+                    {row.size} <strong className="ml-1 tabular-nums">{row.qty}</strong>
+                  </span>
+                ))}
+              </div>
+              <RankBars
+                rows={summary.shawarma.items.map((item) => ({
+                  key: `${item.name}${item.size}`,
+                  label: item.name,
+                  detail: item.size ?? undefined,
+                  value: item.qty,
+                  display: `${item.qty}`,
+                  image: productImages[item.name],
+                }))}
+              />
+            </div>
+          )}
+        </Section>
+
+        <Section title="Drinks and food">
+          <SplitBar
+            parts={[
+              { key: "drinks", label: "Drinks", value: summary.drinks.pesewas, amount: money(summary.drinks.pesewas) },
+              { key: "shawarma", label: "Shawarma", value: summary.shawarma.pesewas, amount: money(summary.shawarma.pesewas) },
+            ]}
+          />
+        </Section>
+
         <Section title="Cash up">
           <SplitBar
             parts={
@@ -370,6 +406,24 @@ export default async function TodayPage({ searchParams }: PageProps) {
           )}
         </Section>
       </div>
+
+      {orders.length > 0 && (
+        <Section title="Latest orders">
+          <ul className="border-t border-dashed">
+            {orders.slice(0, 5).map((order) => (
+              <li key={order.id} className="flex items-baseline gap-3 py-2 text-sm border-b border-dashed">
+                <span className="text-xs text-muted-foreground tabular-nums shrink-0">{clock(order.created_at)}</span>
+                <span className="flex-1 min-w-0 truncate">
+                  {order.items
+                    .map((item) => (item.quantity > 1 ? `${item.quantity} ${item.product_name}` : item.product_name))
+                    .join(", ")}
+                </span>
+                <span className="font-semibold tabular-nums shrink-0">{money(order.total_pesewas)}</span>
+              </li>
+            ))}
+          </ul>
+        </Section>
+      )}
 
       <Link
         href={`/admin/orders?${dayQuery}${branchQuery}`}

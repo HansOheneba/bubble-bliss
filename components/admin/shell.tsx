@@ -3,6 +3,7 @@
 import Image from "next/image";
 import Link, { useLinkStatus } from "next/link";
 import { usePathname } from "next/navigation";
+import { useEffect, useRef } from "react";
 import { SignOutButton } from "@clerk/nextjs";
 import {
   CalendarDays,
@@ -85,9 +86,15 @@ function Logo({ size }: { size: number }) {
 
 export default function AdminShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
+  const scroller = useRef<HTMLElement>(null);
+
+  // Content scrolls inside <main> on phones, so a new page has to start at the top.
+  useEffect(() => {
+    scroller.current?.scrollTo(0, 0);
+  }, [pathname]);
 
   return (
-    <div className="min-h-svh bg-background">
+    <div className="flex flex-col overflow-hidden h-dvh bg-background md:block md:overflow-visible md:h-auto md:min-h-svh">
       {/* Desktop: a slim rail that is always visible */}
       <aside className="fixed inset-y-0 left-0 z-30 hidden w-52 flex-col border-r bg-sidebar md:flex">
         <Link href="/admin" prefetch={false} className="block px-5 pt-5 pb-6">
@@ -132,7 +139,7 @@ export default function AdminShell({ children }: { children: ReactNode }) {
       </aside>
 
       {/* Phone: logo and settings on top */}
-      <header className="sticky top-0 z-30 flex items-center justify-between h-12 px-4 border-b bg-background md:hidden">
+      <header className="flex items-center justify-between h-12 px-4 border-b shrink-0 bg-background md:hidden">
         <Link href="/admin" prefetch={false} aria-label="Today" className="block">
           <Logo size={56} />
         </Link>
@@ -150,14 +157,20 @@ export default function AdminShell({ children }: { children: ReactNode }) {
         </div>
       </header>
 
-      <main className="w-full max-w-4xl px-4 pt-5 pb-28 mx-auto md:pl-56 md:pr-8 md:pt-8 md:pb-12 md:max-w-none md:mx-0 lg:pr-16">
+      <main
+        ref={scroller}
+        className="flex-1 w-full min-h-0 px-4 pt-5 pb-8 overflow-y-auto overscroll-contain md:overflow-visible md:pl-56 md:pr-8 md:pt-8 md:pb-12 lg:pr-16"
+      >
         <div className="max-w-4xl">{children}</div>
       </main>
 
-      {/* Phone: everything one thumb tap away */}
+      {/*
+        Phone: everything one thumb tap away. This sits in the page layout rather than
+        using position: fixed, which drifts when a phone browser's toolbar collapses.
+      */}
       <nav
         aria-label="Main"
-        className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-5 border-t bg-background pb-[env(safe-area-inset-bottom)] md:hidden"
+        className="grid grid-cols-5 border-t shrink-0 bg-background pb-[env(safe-area-inset-bottom)] md:hidden"
       >
         {NAV.map((item) => {
           const active = isActive(item, pathname);
