@@ -1,471 +1,368 @@
-import { Suspense } from "react";
-import { createAdminClient } from "@/lib/supabase";
-import { fetchAllPages } from "@/lib/supabase-fetch";
-import type {
-  Order,
-  Branch,
-  Teller,
-  OrderItem,
-  OrderItemTopping,
-} from "@/lib/database.types";
-import type { OrderItemWithToppings } from "@/lib/order-metrics";
 import {
-  countCupsInOrder,
-  isRevenueCountable,
-  itemRevenueGhs,
-} from "@/lib/order-metrics";
-import { fetchShawarmaProductIds } from "@/lib/shawarma-products";
-import AnalyticsClient from "./analytics-client";
+  Bars,
+  Empty,
+  Ledger,
+  LedgerRow,
+  PageHeader,
+  Rule,
+  Section,
+  Segments,
+  ShareRow,
+} from "@/components/admin/ledger";
+import { requireAdmin } from "@/lib/admin/auth";
+import { hourLabel, money, paymentName, plural, shortDay } from "@/lib/admin/format";
+import {
+  fetchPeriod,
+  fetchTotals,
+  getBranches,
+  getMonthlyHistory,
+  summarize,
+} from "@/lib/admin/queries";
+import { getDayBoundsUtc, ghanaToday } from "@/lib/range-metrics";
+import { cn } from "@/lib/utils";
 
-type TellerWithBranch = Teller & { branch: Branch | null };
+export const metadata = { title: "Sales" };
+export const dynamic = "force-dynamic";
 
-// Only the columns this page reads. Typed narrowly so that using anything else
-// is a compile error rather than a silently wrong number.
-type AnalyticsItem = Pick<
-  OrderItem,
-  "product_id" | "product_name" | "variant_label" | "quantity" | "unit_pesewas"
-> & {
-  toppings: Pick<OrderItemTopping, "topping_name" | "price_applied_pesewas">[];
+const DAY_MS = 86_400_000;
+
+type PeriodKey = "7d" | "30d" | "month" | "last" | "all";
+
+const PERIODS: { key: PeriodKey; label: string }[] = [
+  { key: "7d", label: "7 days" },
+  { key: "30d", label: "30 days" },
+  { key: "month", label: "This month" },
+  { key: "last", label: "Last month" },
+  { key: "all", label: "All time" },
+];
+
+type PageProps = {
+  searchParams: Promise<{ period?: string; branch?: string }>;
 };
 
-type AnalyticsOrder = Pick<
-  Order,
-  | "id"
-  | "created_at"
-  | "total_pesewas"
-  | "status"
-  | "payment_method"
-  | "payment_status"
-  | "phone"
-  | "customer_name"
-  | "order_source"
-  | "teller_id"
-> & {
-  branch: Pick<Branch, "name"> | null;
-  items: AnalyticsItem[];
+type Resolved = {
+  from: Date | null;
+  to: Date;
+  previousFrom: Date | null;
+  previousTo: Date | null;
+  compareLabel: string;
 };
 
-const ANALYTICS_SELECT =
-  "id, created_at, total_pesewas, status, payment_method, payment_status, phone, customer_name, order_source, teller_id, branch:branches(name), items:order_items(product_id, product_name, variant_label, quantity, unit_pesewas, toppings:order_item_toppings(topping_name, price_applied_pesewas))";
+function resolvePeriod(key: PeriodKey): Resolved {
+  const [todayStart, todayEnd] = getDayBoundsUtc(ghanaToday());
+  const monthStart = new Date(Date.UTC(todayStart.getUTCFullYear(), todayStart.getUTCMonth(), 1));
+  const lastMonthStart = new Date(Date.UTC(todayStart.getUTCFullYear(), todayStart.getUTCMonth() - 1, 1));
 
-// itemRevenueGhs reads only unit_pesewas, quantity and the toppings' applied prices.
-const itemRevenue = (item: AnalyticsItem) =>
-  itemRevenueGhs(item as unknown as OrderItemWithToppings);
-
-export type SlimOrder = {
-  id: number;
-  createdAt: string;
-  totalGhs: number;
-  status: string;
-  branchName: string;
-  cupsInOrder: number;
-  paymentMethod: string;
-  paymentStatus: string;
-};
-
-export type SlimShawarmaItem = {
-  createdAt: string;
-  branchName: string;
-  productName: string;
-  variantLabel: string;
-  qty: number;
-  revenueGhs: number;
-};
-
-export type BranchStat = {
-  name: string;
-  orders: number;
-  revenueGhs: number;
-};
-
-export type ProductStat = {
-  name: string;
-  qty: number;
-  revenueGhs: number;
-};
-
-export type ToppingStat = {
-  name: string;
-  qty: number;
-};
-
-export type TellerStat = {
-  id: number;
-  name: string;
-  branch: string;
-  isActive: boolean;
-  orders: number;
-  revenueGhs: number;
-  ordersToday: number;
-  lastOrderAt: string | null;
-};
-
-export type PaymentStat = {
-  method: string;
-  count: number;
-};
-
-export type SourceStat = {
-  source: string;
-  count: number;
-};
-
-export type CustomerStat = {
-  phone: string;
-  name: string;
-  orders: number;
-  totalSpendGhs: number;
-  avgOrderGhs: number;
-  lastOrderAt: string | null;
-  firstOrderAt: string | null;
-  isReturning: boolean;
-};
-
-async function fetchAnalyticsData() {
-  const db = createAdminClient();
-
-  const [rawOrders, shawarmaProductIds] = await Promise.all([
-    fetchAllPages<AnalyticsOrder>((from, to) =>
-      db
-        .from("orders")
-        .select(ANALYTICS_SELECT)
-        .order("created_at", { ascending: false })
-        .range(from, to) as unknown as PromiseLike<{
-        data: AnalyticsOrder[] | null;
-        error: { message: string } | null;
-      }>,
-    ),
-    fetchShawarmaProductIds(db),
-  ]);
-
-  const orders = rawOrders;
-
-  let cupsUsed = 0;
-  for (const o of orders) {
-    cupsUsed += countCupsInOrder(
-      o.items,
-      shawarmaProductIds,
-      o.status,
-      o.payment_status,
-    );
-  }
-
-  const slimOrders: SlimOrder[] = orders.map((o) => ({
-    id: o.id,
-    createdAt: o.created_at ?? new Date().toISOString(),
-    totalGhs: o.total_pesewas / 100,
-    status: o.status ?? "pending",
-    branchName: o.branch?.name ?? "Unknown",
-    cupsInOrder: countCupsInOrder(
-      o.items,
-      shawarmaProductIds,
-      o.status,
-      o.payment_status,
-    ),
-    paymentMethod: o.payment_method ?? "hubtel",
-    paymentStatus: o.payment_status ?? "unpaid",
-  }));
-
-  // ── Shawarma item slim data for client-side range + branch filtering ─────
-  const slimShawarmaItems: SlimShawarmaItem[] = [];
-  for (const o of orders) {
-    if (o.status === "cancelled") continue;
-    for (const item of o.items) {
-      if (item.product_id !== null && shawarmaProductIds.has(item.product_id)) {
-        slimShawarmaItems.push({
-          createdAt: o.created_at ?? new Date().toISOString(),
-          branchName: o.branch?.name ?? "Unknown",
-          productName: item.product_name,
-          variantLabel: item.variant_label ?? "Regular",
-          qty: item.quantity,
-          revenueGhs: itemRevenue(item),
-        });
-      }
-    }
-  }
-
-  // ── Revenue + orders by branch ───────────────────────────────────────────
-  const branchMap = new Map<string, { orders: number; revenueGhs: number }>();
-  for (const o of orders) {
-    if (!isRevenueCountable(o)) continue;
-    const name = o.branch?.name ?? "Unknown";
-    const cur = branchMap.get(name) ?? { orders: 0, revenueGhs: 0 };
-    cur.orders += 1;
-    cur.revenueGhs += o.total_pesewas / 100;
-    branchMap.set(name, cur);
-  }
-  const branchStats: BranchStat[] = [...branchMap.entries()]
-    .map(([name, s]) => ({ name, ...s }))
-    .sort((a, b) => b.revenueGhs - a.revenueGhs);
-
-  // ── Top products by units sold ───────────────────────────────────────────
-  const productMap = new Map<string, { qty: number; revenueGhs: number }>();
-  for (const o of orders) {
-    if (!isRevenueCountable(o)) continue;
-    for (const item of o.items) {
-      const cur = productMap.get(item.product_name) ?? {
-        qty: 0,
-        revenueGhs: 0,
-      };
-      cur.qty += item.quantity;
-      cur.revenueGhs += itemRevenue(item);
-      productMap.set(item.product_name, cur);
-    }
-  }
-  const topProducts: ProductStat[] = [...productMap.entries()]
-    .map(([name, s]) => ({ name, ...s }))
-    .sort((a, b) => b.qty - a.qty)
-    .slice(0, 10);
-
-  // ── Top toppings by count ────────────────────────────────────────────────
-  const toppingMap = new Map<string, number>();
-  for (const o of orders) {
-    for (const item of o.items) {
-      for (const t of item.toppings) {
-        toppingMap.set(
-          t.topping_name,
-          (toppingMap.get(t.topping_name) ?? 0) + 1,
-        );
-      }
-    }
-  }
-  const topToppings: ToppingStat[] = [...toppingMap.entries()]
-    .map(([name, qty]) => ({ name, qty }))
-    .sort((a, b) => b.qty - a.qty)
-    .slice(0, 10);
-
-  // ── Orders + revenue by teller (all tellers, including zero-order ones) ──
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-
-  const { data: rawTellers } = await db
-    .from("tellers")
-    .select("*, branch:branches(*)")
-    .order("name", { ascending: true });
-
-  const allTellers = (rawTellers ?? []) as unknown as TellerWithBranch[];
-
-  type TellerAccum = {
-    orders: number;
-    revenueGhs: number;
-    ordersToday: number;
-    lastOrderAt: string | null;
-  };
-
-  const tellerAccumMap = new Map<number, TellerAccum>();
-  for (const t of allTellers) {
-    tellerAccumMap.set(t.id, {
-      orders: 0,
-      revenueGhs: 0,
-      ordersToday: 0,
-      lastOrderAt: null,
-    });
-  }
-
-  for (const o of orders) {
-    if (!o.teller_id || !isRevenueCountable(o)) continue;
-    const acc = tellerAccumMap.get(o.teller_id);
-    if (!acc) continue;
-    acc.orders += 1;
-    acc.revenueGhs += o.total_pesewas / 100;
-    const orderDate = new Date(o.created_at ?? Date.now());
-    if (orderDate >= today) acc.ordersToday += 1;
-    if (!acc.lastOrderAt || orderDate > new Date(acc.lastOrderAt)) {
-      acc.lastOrderAt = o.created_at;
-    }
-  }
-
-  const tellerStats: TellerStat[] = allTellers
-    .map((t) => {
-      const acc = tellerAccumMap.get(t.id) ?? {
-        orders: 0,
-        revenueGhs: 0,
-        ordersToday: 0,
-        lastOrderAt: null,
-      };
-      return {
-        id: t.id,
-        name: t.name,
-        branch: t.branch?.name ?? "Unknown",
-        isActive: t.is_active,
-        ...acc,
-      };
-    })
-    .sort((a, b) => b.orders - a.orders);
-
-  // ── Payment method breakdown ─────────────────────────────────────────────
-  const paymentMap = new Map<string, number>();
-  for (const o of orders) {
-    const method = o.payment_method ?? "hubtel";
-    paymentMap.set(method, (paymentMap.get(method) ?? 0) + 1);
-  }
-  const paymentStats: PaymentStat[] = [...paymentMap.entries()]
-    .map(([method, count]) => ({ method, count }))
-    .sort((a, b) => b.count - a.count);
-
-  // ── Order source breakdown ───────────────────────────────────────────────
-  const sourceMap = new Map<string, number>();
-  for (const o of orders) {
-    const source = o.order_source ?? "online";
-    sourceMap.set(source, (sourceMap.get(source) ?? 0) + 1);
-  }
-  const sourceStats: SourceStat[] = [...sourceMap.entries()]
-    .map(([source, count]) => ({ source, count }))
-    .sort((a, b) => b.count - a.count);
-
-  // ── Per-branch breakdowns for client-side branch filter ─────────────────
-  const branches = [...new Set(orders.map((o) => o.branch?.name ?? "Unknown"))]
-    .filter(Boolean)
-    .sort();
-
-  type BranchAccum = {
-    productMap: Map<string, { qty: number; revenueGhs: number }>;
-    toppingMap: Map<string, number>;
-    paymentMap: Map<string, number>;
-    sourceMap: Map<string, number>;
-    cupsUsed: number;
-  };
-
-  const perBranchAccum = new Map<string, BranchAccum>();
-  for (const name of branches) {
-    perBranchAccum.set(name, {
-      productMap: new Map(),
-      toppingMap: new Map(),
-      paymentMap: new Map(),
-      sourceMap: new Map(),
-      cupsUsed: 0,
-    });
-  }
-
-  for (const o of orders) {
-    const branchName = o.branch?.name ?? "Unknown";
-    const acc = perBranchAccum.get(branchName);
-    if (!acc) continue;
-
-    acc.cupsUsed += countCupsInOrder(
-      o.items,
-      shawarmaProductIds,
-      o.status,
-      o.payment_status,
-    );
-
-    if (!isRevenueCountable(o)) continue;
-
-    for (const item of o.items) {
-      const cur = acc.productMap.get(item.product_name) ?? {
-        qty: 0,
-        revenueGhs: 0,
-      };
-      cur.qty += item.quantity;
-      cur.revenueGhs += itemRevenue(item);
-      acc.productMap.set(item.product_name, cur);
-
-      for (const t of item.toppings) {
-        acc.toppingMap.set(
-          t.topping_name,
-          (acc.toppingMap.get(t.topping_name) ?? 0) + 1,
-        );
-      }
-    }
-
-    const method = o.payment_method ?? "hubtel";
-    acc.paymentMap.set(method, (acc.paymentMap.get(method) ?? 0) + 1);
-
-    const source = o.order_source ?? "online";
-    acc.sourceMap.set(source, (acc.sourceMap.get(source) ?? 0) + 1);
-  }
-
-  const branchProductStats: Record<string, ProductStat[]> = {};
-  const branchToppingStats: Record<string, ToppingStat[]> = {};
-  const branchPaymentStats: Record<string, PaymentStat[]> = {};
-  const branchSourceStats: Record<string, SourceStat[]> = {};
-  const branchCupsUsed: Record<string, number> = {};
-
-  for (const [name, acc] of perBranchAccum) {
-    branchProductStats[name] = [...acc.productMap.entries()]
-      .map(([n, s]) => ({ name: n, ...s }))
-      .sort((a, b) => b.qty - a.qty)
-      .slice(0, 10);
-    branchToppingStats[name] = [...acc.toppingMap.entries()]
-      .map(([n, qty]) => ({ name: n, qty }))
-      .sort((a, b) => b.qty - a.qty)
-      .slice(0, 10);
-    branchPaymentStats[name] = [...acc.paymentMap.entries()]
-      .map(([method, count]) => ({ method, count }))
-      .sort((a, b) => b.count - a.count);
-    branchSourceStats[name] = [...acc.sourceMap.entries()]
-      .map(([source, count]) => ({ source, count }))
-      .sort((a, b) => b.count - a.count);
-    branchCupsUsed[name] = acc.cupsUsed;
-  }
-
-  // ── Customer insights (grouped by phone number) ──────────────────────────
-  type CustomerAccum = {
-    name: string;
-    orders: number;
-    totalSpendGhs: number;
-    lastOrderAt: string | null;
-    firstOrderAt: string | null;
-  };
-  const customerMap = new Map<string, CustomerAccum>();
-  for (const o of orders) {
-    const phone = o.phone?.trim();
-    if (!phone || !isRevenueCountable(o)) continue;
-    const cur = customerMap.get(phone) ?? {
-      name: o.customer_name ?? phone,
-      orders: 0,
-      totalSpendGhs: 0,
-      lastOrderAt: null,
-      firstOrderAt: null,
+  if (key === "7d" || key === "30d") {
+    const days = key === "7d" ? 7 : 30;
+    const from = new Date(todayEnd.getTime() - days * DAY_MS);
+    return {
+      from,
+      to: todayEnd,
+      previousFrom: new Date(from.getTime() - days * DAY_MS),
+      previousTo: from,
+      compareLabel: `the ${days} days before`,
     };
-    cur.orders += 1;
-    cur.totalSpendGhs += o.total_pesewas / 100;
-    if (o.customer_name && cur.name === phone) cur.name = o.customer_name;
-    const at = o.created_at;
-    if (at) {
-      if (!cur.lastOrderAt || at > cur.lastOrderAt) cur.lastOrderAt = at;
-      if (!cur.firstOrderAt || at < cur.firstOrderAt) cur.firstOrderAt = at;
-    }
-    customerMap.set(phone, cur);
   }
-  const customerStats: CustomerStat[] = [...customerMap.entries()]
-    .map(([phone, c]) => ({
-      phone,
-      name: c.name,
-      orders: c.orders,
-      totalSpendGhs: c.totalSpendGhs,
-      avgOrderGhs: c.orders > 0 ? c.totalSpendGhs / c.orders : 0,
-      lastOrderAt: c.lastOrderAt,
-      firstOrderAt: c.firstOrderAt,
-      isReturning: c.orders > 1,
-    }))
-    .sort((a, b) => b.orders - a.orders);
-
-  return {
-    slimOrders,
-    slimShawarmaItems,
-    branchStats,
-    topProducts,
-    topToppings,
-    tellerStats,
-    paymentStats,
-    sourceStats,
-    cupsUsed,
-    branches,
-    branchProductStats,
-    branchToppingStats,
-    branchPaymentStats,
-    branchSourceStats,
-    branchCupsUsed,
-    customerStats,
-  };
+  if (key === "month") {
+    // The same number of days at the start of last month, so it is a fair race.
+    const elapsed = Date.now() - monthStart.getTime();
+    return {
+      from: monthStart,
+      to: todayEnd,
+      previousFrom: lastMonthStart,
+      previousTo: new Date(lastMonthStart.getTime() + elapsed),
+      compareLabel: "this point last month",
+    };
+  }
+  if (key === "last") {
+    return {
+      from: lastMonthStart,
+      to: monthStart,
+      previousFrom: new Date(Date.UTC(todayStart.getUTCFullYear(), todayStart.getUTCMonth() - 2, 1)),
+      previousTo: lastMonthStart,
+      compareLabel: "the month before",
+    };
+  }
+  return { from: null, to: todayEnd, previousFrom: null, previousTo: null, compareLabel: "" };
 }
 
-export default async function AnalyticsPage() {
-  const data = await fetchAnalyticsData();
+function change(current: number, previous: number): string {
+  if (previous === 0) return "";
+  const percent = Math.round(((current - previous) / previous) * 100);
+  return `${percent >= 0 ? "Up" : "Down"} ${Math.abs(percent)}%`;
+}
+
+function monthName(month: string): string {
+  const [year, index] = month.split("-").map(Number);
+  return new Date(Date.UTC(year, index - 1, 1)).toLocaleDateString("en-GH", {
+    timeZone: "UTC",
+    month: "long",
+    year: "numeric",
+  });
+}
+
+export default async function SalesPage({ searchParams }: PageProps) {
+  await requireAdmin();
+  const params = await searchParams;
+  const period: PeriodKey = PERIODS.some((p) => p.key === params.period)
+    ? (params.period as PeriodKey)
+    : "7d";
+
+  const branches = await getBranches();
+  const branch = branches.find((b) => b.slug === params.branch) ?? null;
+  const branchId = branch?.id ?? null;
+  const range = resolvePeriod(period);
+
+  const [orders, previous, history] = await Promise.all([
+    fetchPeriod(range.from, range.to, branchId),
+    range.previousFrom && range.previousTo
+      ? fetchTotals(range.previousFrom, range.previousTo, branchId)
+      : Promise.resolve(null),
+    getMonthlyHistory(),
+  ]);
+  const summary = await summarize(orders, branches);
+
+  // Sales by day, or by month when the period is long.
+  const firstDay = range.from ?? (orders.length ? new Date(orders[orders.length - 1].created_at ?? 0) : range.to);
+  const spanDays = Math.ceil((range.to.getTime() - firstDay.getTime()) / DAY_MS);
+  const useMonths = spanDays > 62;
+  const buckets = new Map<string, { pesewas: number; orders: number }>();
+  if (!useMonths) {
+    for (let t = firstDay.getTime(); t < range.to.getTime(); t += DAY_MS) {
+      buckets.set(new Date(t).toISOString().slice(0, 10), { pesewas: 0, orders: 0 });
+    }
+  }
+  for (const order of orders) {
+    if (order.payment_status !== "paid" || order.status === "cancelled" || !order.created_at) continue;
+    const key = order.created_at.slice(0, useMonths ? 7 : 10);
+    const bucket = buckets.get(key) ?? { pesewas: 0, orders: 0 };
+    bucket.pesewas += order.total_pesewas;
+    bucket.orders += 1;
+    buckets.set(key, bucket);
+  }
+  const series = [...buckets.entries()].sort(([a], [b]) => a.localeCompare(b));
+  const bestDay = useMonths
+    ? null
+    : series.reduce<[string, { pesewas: number; orders: number }] | null>(
+        (best, entry) => (!best || entry[1].pesewas > best[1].pesewas ? entry : best),
+        null,
+      );
+  const bars = series.map(([key, value]) => ({
+    key,
+    label: useMonths
+      ? new Date(`${key}-01T00:00:00Z`).toLocaleDateString("en-GH", { timeZone: "UTC", month: "short" })
+      : series.length <= 7
+        ? new Date(`${key}T00:00:00Z`).toLocaleDateString("en-GH", { timeZone: "UTC", weekday: "short" })
+        : shortDay(`${key}T00:00:00Z`),
+    value: value.pesewas,
+    title: `${key}: ${money(value.pesewas)}, ${plural(value.orders, "order")}`,
+  }));
+
+  // When is the shop actually busy, for planning shifts.
+  const activeHours = summary.hours.filter((h) => h.orders > 0);
+  const hourBars =
+    activeHours.length === 0
+      ? []
+      : summary.hours
+          .slice(activeHours[0].hour, activeHours[activeHours.length - 1].hour + 1)
+          .map((h) => ({
+            key: String(h.hour),
+            label: hourLabel(h.hour),
+            value: h.orders,
+            title: `${hourLabel(h.hour)}: ${plural(h.orders, "order")}`,
+          }));
+
+  // Regular customers, by the phone number on the order.
+  const customers = new Map<string, { name: string | null; orders: number; pesewas: number }>();
+  for (const order of orders) {
+    const phone = order.phone?.trim();
+    if (!phone || order.payment_status !== "paid" || order.status === "cancelled") continue;
+    const row = customers.get(phone) ?? { name: null, orders: 0, pesewas: 0 };
+    row.name = row.name ?? order.customer_name;
+    row.orders += 1;
+    row.pesewas += order.total_pesewas;
+    customers.set(phone, row);
+  }
+  const returning = [...customers.values()].filter((c) => c.orders > 1).length;
+  const topCustomers = [...customers.entries()]
+    .sort(([, a], [, b]) => b.pesewas - a.pesewas)
+    .slice(0, 5);
+
+  const maxItem = Math.max(1, ...summary.items.slice(0, 10).map((item) => item.qty));
+  const moneyDelta = previous ? change(summary.pesewas, previous.pesewas) : "";
+  const isUp = previous ? summary.pesewas >= previous.pesewas : true;
+  const average = summary.orders ? Math.round(summary.pesewas / summary.orders) : 0;
+
+  const href = (next: { period?: string; branch?: string | null }) => {
+    const query = new URLSearchParams();
+    const nextPeriod = next.period ?? period;
+    const nextBranch = next.branch === undefined ? branch?.slug : next.branch;
+    if (nextPeriod !== "7d") query.set("period", nextPeriod);
+    if (nextBranch) query.set("branch", nextBranch);
+    const text = query.toString();
+    return text ? `/admin/analytics?${text}` : "/admin/analytics";
+  };
+
   return (
-    <Suspense>
-      <AnalyticsClient {...data} />
-    </Suspense>
+    <div className="flex flex-col gap-8">
+      <div>
+        <PageHeader title="Sales" />
+        <div className="flex flex-col gap-2 -mt-3">
+          <Segments
+            label="Period"
+            options={PERIODS.map((p) => ({
+              label: p.label,
+              href: href({ period: p.key }),
+              active: period === p.key,
+            }))}
+          />
+          <Segments
+            label="Branch"
+            options={[
+              { label: "All branches", href: href({ branch: null }), active: !branch },
+              ...branches.map((b) => ({
+                label: b.name.replace(" Branch", ""),
+                href: href({ branch: b.slug }),
+                active: branch?.id === b.id,
+              })),
+            ]}
+          />
+        </div>
+      </div>
+
+      <div>
+        <p className="font-display text-6xl font-bold tracking-tight tabular-nums sm:text-7xl">
+          {money(summary.pesewas)}
+        </p>
+        <p className="mt-2 text-base">
+          {plural(summary.orders, "paid order")}
+          {average > 0 && `, about ${money(average)} each`}.{" "}
+          {moneyDelta && (
+            <span className={cn("font-medium", isUp ? "text-good" : "text-attention")}>
+              {moneyDelta} on {range.compareLabel}.
+            </span>
+          )}
+        </p>
+        {bestDay && bestDay[1].pesewas > 0 && (
+          <p className="mt-1 text-sm text-muted-foreground">
+            Best day: {shortDay(`${bestDay[0]}T00:00:00Z`)}, {money(bestDay[1].pesewas)}.
+          </p>
+        )}
+      </div>
+
+      {bars.length > 0 && (
+        <Section title={useMonths ? "Month by month" : "Day by day"}>
+          <Bars bars={bars} labelEvery={bars.length > 14 ? 7 : 1} />
+        </Section>
+      )}
+
+      <div className="grid gap-8 md:grid-cols-2 md:gap-x-12">
+        <Section title="How people paid">
+          <Ledger>
+            {summary.methods.map((row) => (
+              <LedgerRow
+                key={row.key}
+                label={paymentName(row.key)}
+                detail={`${Math.round((row.pesewas / Math.max(1, summary.pesewas)) * 100)}%`}
+                value={money(row.pesewas)}
+              />
+            ))}
+            {summary.methods.length === 0 && <Empty>No sales in this period.</Empty>}
+            <Rule className="my-1" />
+            <LedgerRow label="Cups used" detail="completed orders" value={summary.cups.toLocaleString("en-GH")} />
+          </Ledger>
+        </Section>
+
+        <Section title="At the till">
+          {summary.tellers.length === 0 ? (
+            <Empty>No cashier sales in this period.</Empty>
+          ) : (
+            <Ledger>
+              {summary.tellers.map((row) => (
+                <LedgerRow
+                  key={row.key}
+                  label={row.label}
+                  detail={plural(row.orders, "order")}
+                  value={money(row.pesewas)}
+                />
+              ))}
+            </Ledger>
+          )}
+        </Section>
+
+        <Section title="Selling most" className="md:row-span-2">
+          {summary.items.length === 0 ? (
+            <Empty>Nothing sold in this period.</Empty>
+          ) : (
+            summary.items.slice(0, 10).map((item) => (
+              <ShareRow
+                key={`${item.name}${item.size}`}
+                label={item.name}
+                detail={item.size ?? undefined}
+                value={`${item.qty.toLocaleString("en-GH")} sold`}
+                share={item.qty / maxItem}
+              />
+            ))
+          )}
+        </Section>
+
+        {summary.toppings.length > 0 && (
+          <Section title="Favourite toppings">
+            <Ledger>
+              {summary.toppings.slice(0, 5).map((topping) => (
+                <LedgerRow key={topping.name} label={topping.name} value={topping.qty.toLocaleString("en-GH")} />
+              ))}
+            </Ledger>
+          </Section>
+        )}
+
+        {hourBars.length > 0 && (
+          <Section title="When it gets busy" note="Orders by hour">
+            <Bars bars={hourBars} labelEvery={2} />
+          </Section>
+        )}
+
+        <Section
+          title="Regulars"
+          note={customers.size > 0 ? `${returning} of ${customers.size} came back` : undefined}
+        >
+          {topCustomers.length === 0 ? (
+            <Empty>No phone numbers were recorded in this period.</Empty>
+          ) : (
+            <Ledger>
+              {topCustomers.map(([phone, customer]) => (
+                <LedgerRow
+                  key={phone}
+                  label={customer.name ?? phone}
+                  detail={plural(customer.orders, "order")}
+                  value={money(customer.pesewas)}
+                />
+              ))}
+            </Ledger>
+          )}
+        </Section>
+      </div>
+
+      <Section title="Every month">
+        <Ledger>
+          {history.map((row) => (
+            <LedgerRow
+              key={row.month}
+              label={monthName(row.month)}
+              detail={
+                branches.length > 1 && !branch
+                  ? branches
+                      .filter((b) => row.branches[String(b.id)])
+                      .map((b) => `${b.name.replace(" Branch", "")} ${money(row.branches[String(b.id)])}`)
+                      .join(", ")
+                  : undefined
+              }
+              value={money(branch ? (row.branches[String(branch.id)] ?? 0) : row.pesewas)}
+            />
+          ))}
+        </Ledger>
+      </Section>
+    </div>
   );
 }

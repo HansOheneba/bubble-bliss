@@ -1,17 +1,11 @@
 "use client";
 
+import { Empty, PageHeader } from "@/components/admin/ledger";
+import { TeamTabs } from "@/components/admin/tabs";
+
 import * as React from "react";
 import { useSearchParams, usePathname } from "next/navigation";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -21,7 +15,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Search, X } from "lucide-react";
-import { cn } from "@/lib/utils";
 
 type AdminLog = {
   id: number;
@@ -61,46 +54,11 @@ const ACTION_CATEGORY: Record<string, string> = {
   "pos_user.delete": "pos_user",
 };
 
-const CATEGORY_STYLES: Record<string, string> = {
-  product:
-    "bg-blue-100 text-blue-800 dark:bg-blue-950/50 dark:text-blue-400 dark:border dark:border-blue-800/50",
-  topping:
-    "bg-purple-100 text-purple-800 dark:bg-purple-950/50 dark:text-purple-400 dark:border dark:border-purple-800/50",
-  category:
-    "bg-amber-100 text-amber-800 dark:bg-amber-950/50 dark:text-amber-400 dark:border dark:border-amber-800/50",
-  teller:
-    "bg-green-100 text-green-800 dark:bg-green-950/50 dark:text-green-400 dark:border dark:border-green-800/50",
-  pos_user:
-    "bg-orange-100 text-orange-800 dark:bg-orange-950/50 dark:text-orange-400 dark:border dark:border-orange-800/50",
-};
-
-const ACTION_STYLES: Record<string, string> = {
-  create:
-    "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-400 dark:border dark:border-emerald-800/50",
-  update:
-    "bg-sky-100 text-sky-800 dark:bg-sky-950/50 dark:text-sky-400 dark:border dark:border-sky-800/50",
-  delete:
-    "bg-red-100 text-red-800 dark:bg-red-950/50 dark:text-red-400 dark:border dark:border-red-800/50",
-  toggle_active:
-    "bg-slate-100 text-slate-700 dark:bg-slate-800/50 dark:text-slate-300 dark:border dark:border-slate-700/50",
-  toggle_stock:
-    "bg-slate-100 text-slate-700 dark:bg-slate-800/50 dark:text-slate-300 dark:border dark:border-slate-700/50",
-  deactivate:
-    "bg-red-100 text-red-800 dark:bg-red-950/50 dark:text-red-400 dark:border dark:border-red-800/50",
-  reactivate:
-    "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-400 dark:border dark:border-emerald-800/50",
-};
-
 function formatDate(iso: string) {
   return new Intl.DateTimeFormat("en-GH", {
     dateStyle: "medium",
     timeStyle: "short",
   }).format(new Date(iso));
-}
-
-function parseAction(action: string): { category: string; verb: string } {
-  const [category, ...verbParts] = action.split(".");
-  return { category, verb: verbParts.join("_") };
 }
 
 const ALL_CATEGORIES = ["product", "topping", "category", "teller", "pos_user"];
@@ -169,9 +127,10 @@ export default function LogsClient({ logs }: Props) {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Activity Logs</h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          A record of all admin actions. Showing the most recent 500 entries.
+        <PageHeader title="Team" />
+        <TeamTabs active="activity" />
+        <p className="text-sm text-muted-foreground">
+          Who changed what in this admin, newest first.
         </p>
       </div>
 
@@ -249,69 +208,20 @@ export default function LogsClient({ logs }: Props) {
         </span>
       </div>
 
-      {/* Table */}
-      <div className="rounded-xl border bg-background overflow-hidden">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead className="w-40">When</TableHead>
-              <TableHead className="w-52">Admin</TableHead>
-              <TableHead className="w-24">Category</TableHead>
-              <TableHead className="w-28">Action</TableHead>
-              <TableHead>Description</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {filtered.map((log) => {
-              const { category, verb } = parseAction(log.action);
-              return (
-                <TableRow key={log.id}>
-                  <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
-                    {formatDate(log.created_at)}
-                  </TableCell>
-                  <TableCell className="text-xs font-mono truncate max-w-48">
-                    {log.admin_email}
-                  </TableCell>
-                  <TableCell>
-                    <Badge
-                      variant="default"
-                      className={cn(
-                        "text-xs capitalize",
-                        CATEGORY_STYLES[category] ??
-                          "bg-muted text-muted-foreground",
-                      )}
-                    >
-                      {category.replace("_", " ")}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                    <Badge
-                      variant="default"
-                      className={cn(
-                        "text-xs capitalize",
-                        ACTION_STYLES[verb] ?? "bg-muted text-muted-foreground",
-                      )}
-                    >
-                      {verb.replace("_", " ")}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="text-sm">{log.description}</TableCell>
-                </TableRow>
-              );
-            })}
-            {filtered.length === 0 && (
-              <TableRow>
-                <TableCell
-                  colSpan={5}
-                  className="py-10 text-center text-muted-foreground text-sm"
-                >
-                  No activity logs match your filters.
-                </TableCell>
-              </TableRow>
-            )}
-          </TableBody>
-        </Table>
-      </div>
+      {filtered.length === 0 ? (
+        <Empty>Nothing matches that.</Empty>
+      ) : (
+        <ul className="border-t border-dashed">
+          {filtered.map((log) => (
+            <li key={log.id} className="py-3 border-b border-dashed">
+              <p className="text-sm">{log.description}</p>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                {formatDate(log.created_at)}, {log.admin_email}
+              </p>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }

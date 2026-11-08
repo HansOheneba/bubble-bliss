@@ -1,17 +1,21 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import localFont from "next/font/local";
 import "./globals.css";
 import { ThemeProvider } from "@/components/theme-provider";
 import { ClerkProvider } from "@clerk/nextjs";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
+const bricolage = localFont({
+  src: "./fonts/bricolage-grotesque-latin-wght-normal.woff2",
+  variable: "--font-bricolage",
+  weight: "200 800",
+  display: "swap",
 });
 
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
+const instrumentSans = localFont({
+  src: "./fonts/instrument-sans-latin-wght-normal.woff2",
+  variable: "--font-text",
+  weight: "400 700",
+  display: "swap",
 });
 
 export const metadata: Metadata = {
@@ -37,7 +41,7 @@ export default function RootLayout({
     <ClerkProvider>
       <html lang="en" suppressHydrationWarning className="h-full">
         <body
-          className={`${geistSans.variable} ${geistMono.variable} antialiased h-full`}
+          className={`${bricolage.variable} ${instrumentSans.variable} antialiased h-full`}
         >
           <ThemeProvider
             attribute="class"

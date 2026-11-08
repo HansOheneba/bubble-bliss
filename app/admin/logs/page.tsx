@@ -1,3 +1,4 @@
+import { requireAdmin } from "@/lib/admin/auth";
 import { Suspense } from "react";
 import { createAdminClient } from "@/lib/supabase";
 import LogsClient from "./logs-client";
@@ -22,6 +23,7 @@ async function fetchLogs(): Promise<AdminLog[]> {
 }
 
 export default async function LogsPage() {
+  await requireAdmin();
   const logs = await fetchLogs();
   return (
     <Suspense>

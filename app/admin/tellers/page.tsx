@@ -1,3 +1,4 @@
+import { requireAdmin } from "@/lib/admin/auth";
 import { createAdminClient } from "@/lib/supabase";
 import type { Teller, Branch } from "@/lib/database.types";
 import TellersClient from "./tellers-client";
@@ -25,6 +26,7 @@ async function fetchPageData() {
 }
 
 export default async function TellersPage() {
+  await requireAdmin();
   const { tellers, branches } = await fetchPageData();
   return <TellersClient initialTellers={tellers} branches={branches} />;
 }

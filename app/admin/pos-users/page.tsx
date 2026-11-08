@@ -1,3 +1,4 @@
+import { requireAdmin } from "@/lib/admin/auth";
 import { createAdminClient } from "@/lib/supabase";
 import type { PosUser, Branch } from "@/lib/database.types";
 import PosUsersClient from "./pos-users-client";
@@ -25,6 +26,7 @@ async function fetchPageData() {
 }
 
 export default async function PosUsersPage() {
+  await requireAdmin();
   const { posUsers, branches } = await fetchPageData();
   return <PosUsersClient initialPosUsers={posUsers} branches={branches} />;
 }

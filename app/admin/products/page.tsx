@@ -1,3 +1,4 @@
+import { requireAdmin } from "@/lib/admin/auth";
 import { createAdminClient } from "@/lib/supabase";
 import type {
   ProductWithVariants,
@@ -29,13 +30,18 @@ async function fetchPageData() {
   };
 }
 
-export default async function ProductsPage() {
+type PageProps = { searchParams: Promise<{ stock?: string }> };
+
+export default async function ProductsPage({ searchParams }: PageProps) {
+  await requireAdmin();
+  const { stock } = await searchParams;
   const { products, branches, categories } = await fetchPageData();
   return (
     <ProductsClient
       initialProducts={products}
       branches={branches}
       categories={categories}
+      onlySoldOut={stock === "out"}
     />
   );
 }

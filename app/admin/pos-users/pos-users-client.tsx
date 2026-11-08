@@ -1,5 +1,8 @@
 "use client";
 
+import { PageHeader } from "@/components/admin/ledger";
+import { TeamTabs } from "@/components/admin/tabs";
+
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
@@ -29,7 +32,6 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Badge } from "@/components/ui/badge";
 import { Plus, Pencil, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { PosUser, Branch } from "@/lib/database.types";
@@ -157,41 +159,44 @@ export default function PosUsersClient({ initialPosUsers, branches }: Props) {
   const inactive = posUsers.filter((u) => !u.is_active);
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold">POS Users</h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            Manage point-of-sale login accounts and branch assignments.
-          </p>
-        </div>
-        <Button onClick={openCreate} size="sm" className="gap-2">
-          <Plus className="w-4 h-4" />
-          Add POS User
-        </Button>
+    <div className="space-y-4">
+      <div>
+        <PageHeader
+          title="Team"
+          action={
+            <Button onClick={openCreate} className="gap-2">
+              <Plus className="size-4" aria-hidden />
+              Add login
+            </Button>
+          }
+        />
+        <TeamTabs active="logins" />
+        <p className="text-sm text-muted-foreground">
+          The Google account a tablet signs in with. It decides which branch that tablet belongs to.
+        </p>
       </div>
 
       {/* Active POS users */}
       <div className="space-y-3">
         {active.length === 0 && (
-          <p className="text-sm text-muted-foreground py-8 text-center border rounded-lg">
-            No POS users yet. Add one to get started.
+          <p className="text-sm text-muted-foreground py-8 text-center">
+            No logins yet. Add the first one.
           </p>
         )}
         {active.map((u) => (
           <div
             key={u.id}
-            className="flex items-center justify-between p-4 border rounded-lg bg-card"
+            className="flex items-center justify-between py-3 border-b border-dashed"
           >
             <div className="space-y-0.5">
               <p className="font-medium text-sm">{u.name ?? u.email}</p>
               <p className="text-xs text-muted-foreground">{u.email}</p>
-              <Badge variant="outline" className="text-xs mt-1">
+              <p className="text-xs text-muted-foreground">
                 {u.branch?.name ?? "Unknown branch"}
-              </Badge>
+              </p>
             </div>
             <div className="flex gap-2">
-              <Button variant="ghost" size="icon" onClick={() => openEdit(u)}>
+              <Button variant="ghost" size="icon" onClick={() => openEdit(u)} aria-label={`Edit ${u.name ?? u.email}`}>
                 <Pencil className="w-4 h-4" />
               </Button>
               <Button
@@ -217,22 +222,22 @@ export default function PosUsersClient({ initialPosUsers, branches }: Props) {
       {/* Inactive POS users */}
       {inactive.length > 0 && (
         <div className="space-y-2">
-          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-            Inactive
+          <p className="pt-4 text-sm font-semibold font-display">
+            Turned off
           </p>
           {inactive.map((u) => (
             <div
               key={u.id}
               className={cn(
-                "flex items-center justify-between p-4 border rounded-lg bg-card opacity-60",
+                "flex items-center justify-between py-3 border-b border-dashed opacity-60",
               )}
             >
               <div className="space-y-0.5">
                 <p className="font-medium text-sm">{u.name ?? u.email}</p>
                 <p className="text-xs text-muted-foreground">{u.email}</p>
-                <Badge variant="secondary" className="text-xs mt-1">
+                <p className="text-xs text-muted-foreground">
                   {u.branch?.name ?? "Unknown branch"}
-                </Badge>
+                </p>
               </div>
               <div className="flex gap-2">
                 <Button
@@ -264,7 +269,7 @@ export default function PosUsersClient({ initialPosUsers, branches }: Props) {
         >
           <SheetHeader>
             <SheetTitle>
-              {editing ? "Edit POS User" : "New POS User"}
+              {editing ? "Edit login" : "New POS User"}
             </SheetTitle>
             <SheetDescription>
               {editing
