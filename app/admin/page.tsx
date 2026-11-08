@@ -164,7 +164,8 @@ export default async function TodayPage({ searchParams }: PageProps) {
     lastHour + 1,
   ].map((hour) => hourLabel(hour % 24));
 
-  const average = summary.orders ? Math.round(summary.pesewas / summary.orders) : 0;
+  // Whole cedis: this is a sense of size, and it has to fit a narrow column.
+  const average = summary.orders ? Math.round(summary.pesewas / summary.orders / 100) * 100 : 0;
 
   const query = (next: { date?: string; branch?: string | null }) => {
     const search = new URLSearchParams();
@@ -250,7 +251,7 @@ export default async function TodayPage({ searchParams }: PageProps) {
               )}
               {difference >= 0 ? "+" : "-"}
               {money(Math.abs(difference))}
-              <span className="sr-only">compared with {lastWeekName}</span>
+              <span className="text-xs font-normal text-muted-foreground">vs {lastWeekName}</span>
             </span>
           )}
           {isToday && summary.lastOrderAt && (
