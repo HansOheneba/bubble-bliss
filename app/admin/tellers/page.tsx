@@ -3,7 +3,7 @@ import { createAdminClient } from "@/lib/supabase";
 import type { Teller, Branch } from "@/lib/database.types";
 import TellersClient from "./tellers-client";
 
-export const metadata = { title: "Team" };
+export const metadata = { title: "Tellers" };
 
 type TellerWithBranch = Teller & { branch: Branch | null };
 

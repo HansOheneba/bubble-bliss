@@ -15,13 +15,15 @@ import { getBranches, getMonthlyHistory } from "@/lib/admin/queries";
 import { ghanaToday } from "@/lib/range-metrics";
 import { compareChoices, getCompare, getSalesView, type CompareMode, type PeriodKey } from "@/lib/admin/sales";
 import { Change, MonthBars } from "@/components/admin/glance";
+import DatePicker from "@/components/admin/date-picker";
 import CompareControls from "./compare-controls";
 import { cn } from "@/lib/utils";
 
-export const metadata = { title: "Sales" };
+export const metadata = { title: "Analytics" };
 export const dynamic = "force-dynamic";
 
 const PERIODS: { key: PeriodKey; label: string }[] = [
+  { key: "today", label: "Today" },
   { key: "7d", label: "7 days" },
   { key: "30d", label: "30 days" },
   { key: "month", label: "This month" },
@@ -31,6 +33,7 @@ const PERIODS: { key: PeriodKey; label: string }[] = [
 
 type PageProps = {
   searchParams: Promise<{
+    date?: string;
     period?: string;
     branch?: string;
     view?: string;
@@ -52,9 +55,13 @@ function monthName(month: string): string {
 export default async function SalesPage({ searchParams }: PageProps) {
   await requireAdmin();
   const params = await searchParams;
-  const period: PeriodKey = PERIODS.some((p) => p.key === params.period)
-    ? (params.period as PeriodKey)
-    : "7d";
+  const pickedDate =
+    params.date && /^\d{4}-\d{2}-\d{2}$/.test(params.date) && params.date <= ghanaToday() ? params.date : null;
+  const period: PeriodKey = pickedDate
+    ? `day:${pickedDate}`
+    : PERIODS.some((p) => p.key === params.period)
+      ? (params.period as PeriodKey)
+      : "7d";
 
   const branches = await getBranches();
   const branch = branches.find((b) => b.slug === params.branch) ?? null;
@@ -113,7 +120,7 @@ export default async function SalesPage({ searchParams }: PageProps) {
     return (
       <div className="flex flex-col gap-8">
         <div>
-          <PageHeader title="Sales" />
+          <PageHeader title="Analytics" />
           <div className="-mt-3">
             {viewTabs}
             {branchTabs((slug) => `/admin/analytics?view=monthly${slug ? `&branch=${slug}` : ""}`)}
@@ -157,7 +164,7 @@ export default async function SalesPage({ searchParams }: PageProps) {
     return (
       <div className="flex flex-col gap-6">
         <div>
-          <PageHeader title="Sales" />
+          <PageHeader title="Analytics" />
           <div className="-mt-3">
             {viewTabs}
             {branchTabs((slug) => `/admin/analytics?view=compare&cmode=${mode}&ca=${a}&cb=${b}${slug ? `&branch=${slug}` : ""}`)}
@@ -190,6 +197,20 @@ export default async function SalesPage({ searchParams }: PageProps) {
             ),
           )}
         </Section>
+        <Section title="Top shawarma" note="Number sold in A">
+          {first.shawarma.items.length === 0 ? (
+            <Empty>No shawarma sold in A.</Empty>
+          ) : (
+            first.shawarma.items.map((item) =>
+              metric(
+                `${item.name} ${item.size ?? ""}`.trim(),
+                item.qty,
+                second.shawarma.items.find((other) => other.name === item.name && other.size === item.size)?.qty ?? 0,
+                count,
+              ),
+            )
+          )}
+        </Section>
         <Section title="Top items" note="Number sold in A">
           {items.map((key) => metric(key.replace("__", " ").trim(), qtyIn(first.items, key), qtyIn(second.items, key), count))}
         </Section>
@@ -209,6 +230,8 @@ export default async function SalesPage({ searchParams }: PageProps) {
     topCustomers,
     mostFrequent,
     orderBars,
+    tellerRows,
+    noCashier,
     moneyDelta,
     isUp,
     average,
@@ -220,7 +243,8 @@ export default async function SalesPage({ searchParams }: PageProps) {
     const query = new URLSearchParams();
     const nextPeriod = next.period ?? period;
     const nextBranch = next.branch === undefined ? branch?.slug : next.branch;
-    if (nextPeriod !== "7d") query.set("period", nextPeriod);
+    if (nextPeriod.startsWith("day:")) query.set("date", nextPeriod.slice(4));
+    else if (nextPeriod !== "7d") query.set("period", nextPeriod);
     if (nextBranch) query.set("branch", nextBranch);
     const text = query.toString();
     return text ? `/admin/analytics?${text}` : "/admin/analytics";
@@ -229,17 +253,25 @@ export default async function SalesPage({ searchParams }: PageProps) {
   return (
     <div className="flex flex-col gap-8">
       <div>
-        <PageHeader title="Sales" />
+        <PageHeader title="Analytics" />
         <div className="flex flex-col gap-2 -mt-3">
           {viewTabs}
-          <Segments
-            label="Period"
-            options={PERIODS.map((p) => ({
-              label: p.label,
-              href: href({ period: p.key }),
-              active: period === p.key,
-            }))}
-          />
+          <div className="flex items-center gap-2">
+            <Segments
+              label="Period"
+              className="flex-1 min-w-0"
+              options={PERIODS.map((p) => ({
+                label: p.label,
+                href: href({ period: p.key }),
+                active: period === p.key,
+              }))}
+            />
+            <DatePicker
+              value={pickedDate ?? ""}
+              max={ghanaToday()}
+              label={pickedDate ? shortDay(`${pickedDate}T00:00:00Z`) : "Date"}
+            />
+          </div>
           <Segments
             label="Branch"
             options={[
@@ -334,21 +366,53 @@ export default async function SalesPage({ searchParams }: PageProps) {
           </Ledger>
         </Section>
 
-        <Section title="At the till">
-          {summary.tellers.length === 0 ? (
-            <Empty>No cashier sales in this period.</Empty>
+        <Section title="Tellers">
+          {tellerRows.length === 0 ? (
+            <Empty>No tellers added yet.</Empty>
           ) : (
             <Ledger>
-              {summary.tellers.map((row) => (
+              {tellerRows.map((row) => (
                 <LedgerRow
                   key={row.key}
-                  label={row.label}
-                  detail={`${plural(row.orders, "order")}, about ${money(Math.round(row.pesewas / Math.max(1, row.orders)))} each${row.lastAt ? `, last ${shortDay(row.lastAt)} ${clock(row.lastAt)}` : ""}`}
+                  label={row.name}
+                  detail={`${row.isActive ? "" : "Inactive, "}${row.branch ? `${row.branch}, ` : ""}${row.today} today, ${plural(row.orders, "order")} here${row.orders ? `, about ${money(Math.round(row.pesewas / row.orders))} each` : ""}${row.lastAt ? `, last ${shortDay(row.lastAt)} ${clock(row.lastAt)}` : ""}`}
                   value={money(row.pesewas)}
                 />
               ))}
+              {noCashier && (
+                <LedgerRow
+                  label="No teller recorded"
+                  detail={plural(noCashier.orders, "order")}
+                  value={money(noCashier.pesewas)}
+                />
+              )}
             </Ledger>
           )}
+        </Section>
+
+        <Section title="By branch">
+          <Ledger>
+            {branches.map((b) => {
+              const row = summary.branches.find((r) => r.key === String(b.id));
+              return (
+                <LedgerRow
+                  key={b.id}
+                  label={b.name.replace(" Branch", "")}
+                  detail={plural(row?.orders ?? 0, "order")}
+                  value={money(row?.pesewas ?? 0)}
+                />
+              );
+            })}
+          </Ledger>
+        </Section>
+
+        <Section title="Order status">
+          <Ledger>
+            <LedgerRow label="Completed" value={summary.statuses.completed.toLocaleString("en-GH")} />
+            <LedgerRow label="Still open" value={summary.statuses.open.toLocaleString("en-GH")} />
+            <LedgerRow label="Not paid" value={summary.statuses.unpaid.toLocaleString("en-GH")} />
+            <LedgerRow label="Cancelled" value={summary.statuses.cancelled.toLocaleString("en-GH")} />
+          </Ledger>
         </Section>
 
         <Section title="Where orders came from">
@@ -393,7 +457,7 @@ export default async function SalesPage({ searchParams }: PageProps) {
         )}
 
         <Section
-          title="Regulars"
+          title="Customers"
           note={customerCount > 0 ? `${returning} of ${customerCount} came back (${Math.round((returning / customerCount) * 100)}%)` : undefined}
         >
           {topCustomers.length === 0 ? (
@@ -404,7 +468,7 @@ export default async function SalesPage({ searchParams }: PageProps) {
                 <LedgerRow
                   key={customer.phone}
                   label={customer.name ?? customer.phone}
-                  detail={`${customer.phone}, ${plural(customer.orders, "order")}`}
+                  detail={`${customer.phone}, ${customer.orders > 1 ? "Returning" : "New"}, ${plural(customer.orders, "order")}, about ${money(Math.round(customer.pesewas / customer.orders))} each${customer.lastAt ? `, last ${shortDay(customer.lastAt)}` : ""}`}
                   value={money(customer.pesewas)}
                 />
               ))}
@@ -412,7 +476,8 @@ export default async function SalesPage({ searchParams }: PageProps) {
           )}
           {mostFrequent && (
             <p className="mt-2 text-xs text-muted-foreground">
-              Most frequent: {mostFrequent.name ?? mostFrequent.phone}, {plural(mostFrequent.orders, "order")}.
+              Top spender: {topCustomers[0].name ?? topCustomers[0].phone}. Most frequent:{" "}
+              {mostFrequent.name ?? mostFrequent.phone}, {plural(mostFrequent.orders, "order")}.
             </p>
           )}
         </Section>

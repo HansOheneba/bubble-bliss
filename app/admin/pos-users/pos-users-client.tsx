@@ -166,7 +166,7 @@ export default function PosUsersClient({ initialPosUsers, branches }: Props) {
           action={
             <Button onClick={openCreate} className="gap-2">
               <Plus className="size-4" aria-hidden />
-              Add login
+              Add POS user
             </Button>
           }
         />
@@ -180,7 +180,7 @@ export default function PosUsersClient({ initialPosUsers, branches }: Props) {
       <div className="space-y-3">
         {active.length === 0 && (
           <p className="text-sm text-muted-foreground py-8 text-center">
-            No logins yet. Add the first one.
+            No POS users yet. Add the first one.
           </p>
         )}
         {active.map((u) => (
@@ -223,7 +223,7 @@ export default function PosUsersClient({ initialPosUsers, branches }: Props) {
       {inactive.length > 0 && (
         <div className="space-y-2">
           <p className="pt-4 text-sm font-semibold font-display">
-            Turned off
+            Inactive
           </p>
           {inactive.map((u) => (
             <div
@@ -269,7 +269,7 @@ export default function PosUsersClient({ initialPosUsers, branches }: Props) {
         >
           <SheetHeader>
             <SheetTitle>
-              {editing ? "Edit login" : "New POS User"}
+              {editing ? "Edit POS user" : "New POS User"}
             </SheetTitle>
             <SheetDescription>
               {editing

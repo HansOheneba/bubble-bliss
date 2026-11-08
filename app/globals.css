@@ -194,3 +194,21 @@
     transform: scaleX(0.6);
   }
 }
+
+/* Any tap that is waiting on the server: a line along the top, and dimmed content. */
+html[data-nav-pending] body::before {
+  content: "";
+  position: fixed;
+  inset: 0 0 auto 0;
+  z-index: 60;
+  height: 3px;
+  background: var(--primary);
+  transform-origin: left;
+  animation: nav-progress 1800ms cubic-bezier(0.23, 1, 0.32, 1) forwards;
+}
+[data-page-content] {
+  transition: opacity 150ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+html[data-nav-pending] [data-page-content] {
+  opacity: 0.5;
+}

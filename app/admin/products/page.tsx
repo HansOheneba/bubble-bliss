@@ -7,7 +7,7 @@ import type {
 } from "@/lib/database.types";
 import ProductsClient from "./products-client";
 
-export const metadata = { title: "Menu" };
+export const metadata = { title: "Products" };
 
 async function fetchPageData() {
   const supabase = createAdminClient();

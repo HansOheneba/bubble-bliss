@@ -4,6 +4,7 @@ import { CalendarDays, Loader2 } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useRef, useTransition } from "react";
 
+import { useShowPending } from "@/components/admin/pending";
 import { cn } from "@/lib/utils";
 
 /** Jump straight to any past day. Uses the phone's own date wheel. */
@@ -27,12 +28,14 @@ export default function DatePicker({
   const searchParams = useSearchParams();
   const input = useRef<HTMLInputElement>(null);
   const [pending, startTransition] = useTransition();
+  useShowPending(pending);
 
   function choose(next: string) {
     if (!next) return;
     const query = new URLSearchParams(searchParams.toString());
     query.delete("day");
     query.delete("limit");
+    query.delete("period");
     if (next === defaultValue) query.delete("date");
     else query.set("date", next);
     const text = query.toString();
