@@ -47,7 +47,10 @@ export default function AdminSidebar() {
   return (
     <Sidebar collapsible="icon" variant="sidebar">
       <SidebarHeader className="pt-2">
-        <Link href="/admin" className="flex items-center gap-3 rounded-md py-2">
+        <Link
+          href="/admin"
+          prefetch={false}
+          className="flex items-center gap-3 rounded-md py-2">
           <div className="flex items-center justify-center w-full py-1">
             <Image
               src="/bbl-black.png"
@@ -85,7 +88,11 @@ export default function AdminSidebar() {
                   tooltip={item.label}
                   className="data-[active=true]:bg-primary data-[active=true]:text-primary-foreground hover:data-[active=true]:bg-primary/90"
                 >
-                  <Link href={item.href} className="flex items-center gap-2">
+                  <Link
+                    href={item.href}
+                    prefetch={false}
+                    className="flex items-center gap-2"
+                  >
                     <item.icon />
                     <span>{item.label}</span>
                   </Link>
@@ -102,7 +109,10 @@ export default function AdminSidebar() {
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton asChild tooltip="Support">
-              <Link href="/admin/support" className="flex items-center gap-2">
+              <Link
+                href="/admin/support"
+                prefetch={false}
+                className="flex items-center gap-2">
                 <LifeBuoy />
                 <span>Support</span>
               </Link>

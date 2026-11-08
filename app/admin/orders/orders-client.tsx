@@ -16,7 +16,6 @@ import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
-  DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuCheckboxItem,
@@ -161,7 +160,10 @@ export default function OrdersClient({
   const router = useRouter();
   const pathname = usePathname();
 
-  function syncToUrl(updates: Record<string, string | null>) {
+  function syncToUrl(
+    updates: Record<string, string | null>,
+    options?: { reloadFromServer?: boolean },
+  ) {
     const params = new URLSearchParams(searchParams.toString());
     for (const [key, value] of Object.entries(updates)) {
       if (value === null || value === "") {
@@ -170,7 +172,14 @@ export default function OrdersClient({
         params.set(key, value);
       }
     }
-    router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+    const url = `${pathname}?${params.toString()}`;
+    if (options?.reloadFromServer) {
+      router.replace(url, { scroll: false });
+      return;
+    }
+    // Filters are applied in the browser. Update the URL without re-running the
+    // server page, which would reload the orders on each click and keystroke.
+    window.history.replaceState(null, "", url);
   }
 
   const [orders, setOrders] = React.useState<OrderWithItems[]>(initialOrders);
@@ -192,9 +201,10 @@ export default function OrdersClient({
     (searchParams.get("sort") as "queue" | "latest") ?? "queue",
   );
   const [dateRange, setDateRange] = React.useState<
-    "all" | "today" | "yesterday" | "7d"
+    "recent" | "all" | "today" | "yesterday" | "7d"
   >(
-    (searchParams.get("date") as "all" | "today" | "yesterday" | "7d") ?? "all",
+    (searchParams.get("date") as "all" | "today" | "yesterday" | "7d") ??
+      "recent",
   );
   const [open, setOpen] = React.useState(false);
   const [activeOrderId, setActiveOrderId] = React.useState<number | null>(null);
@@ -273,7 +283,7 @@ export default function OrdersClient({
         return false;
 
       // Date range filter
-      if (dateRange !== "all") {
+      if (dateRange !== "all" && dateRange !== "recent") {
         const created = new Date(o.created_at ?? 0);
         const now = new Date();
         const todayStart = new Date(now);
@@ -321,7 +331,7 @@ export default function OrdersClient({
     selectedBranches.length > 0 ||
     selectedPayment.length > 0 ||
     selectedSource.length > 0 ||
-    dateRange !== "all" ||
+    dateRange !== "recent" ||
     sortMode !== "queue";
 
   async function updateOrderStatus(orderId: number, status: OrderStatus) {
@@ -421,9 +431,11 @@ export default function OrdersClient({
                 Date
                 <ChevronDown className="h-4 w-4 opacity-50" />
                 <Badge variant="secondary" className="ml-1">
-                  {dateRange === "all"
-                    ? "All time"
-                    : dateRange === "today"
+                  {dateRange === "recent"
+                    ? "Recent + open"
+                    : dateRange === "all"
+                      ? "All time"
+                      : dateRange === "today"
                       ? "Today"
                       : dateRange === "yesterday"
                         ? "Yesterday"
@@ -436,10 +448,11 @@ export default function OrdersClient({
               <DropdownMenuSeparator />
               {(
                 [
-                  ["all", "All time"],
+                  ["recent", "Recent + open"],
                   ["today", "Today"],
                   ["yesterday", "Yesterday"],
                   ["7d", "Last 7 days"],
+                  ["all", "All time (slower)"],
                 ] as const
               ).map(([val, label]) => (
                 <DropdownMenuCheckboxItem
@@ -447,7 +460,14 @@ export default function OrdersClient({
                   checked={dateRange === val}
                   onCheckedChange={() => {
                     setDateRange(val);
-                    syncToUrl({ date: val === "all" ? null : val });
+                    // "All time" is the only choice that needs different data.
+                    syncToUrl(
+                      { date: val === "recent" ? null : val },
+                      {
+                        reloadFromServer:
+                          (val === "all") !== (dateRange === "all"),
+                      },
+                    );
                   }}
                 >
                   {label}
@@ -604,16 +624,19 @@ export default function OrdersClient({
                 setSelectedBranches([]);
                 setSelectedPayment([]);
                 setSelectedSource([]);
-                setDateRange("all");
+                setDateRange("recent");
                 setSortMode("queue");
-                syncToUrl({
-                  statuses: null,
-                  branches: null,
-                  payment: null,
-                  source: null,
-                  date: null,
-                  sort: null,
-                });
+                syncToUrl(
+                  {
+                    statuses: null,
+                    branches: null,
+                    payment: null,
+                    source: null,
+                    date: null,
+                    sort: null,
+                  },
+                  { reloadFromServer: dateRange === "all" },
+                );
               }}
             >
               <X className="h-4 w-4" />
@@ -628,6 +651,8 @@ export default function OrdersClient({
         <Table>
           <TableCaption className="text-muted-foreground">
             Showing {filtered.length} order{filtered.length === 1 ? "" : "s"}.
+            {dateRange !== "all" &&
+              " Includes the last 8 days and any order still open. Choose All time in Date to see older orders."}
           </TableCaption>
           <TableHeader>
             <TableRow>
