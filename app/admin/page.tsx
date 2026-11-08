@@ -342,7 +342,7 @@ export default async function TodayPage({ searchParams }: PageProps) {
           { label: "Completed", value: summary.statuses.completed },
           { label: "Still open", value: summary.statuses.open },
           { label: "Shawarmas", value: summary.shawarma.qty },
-          { label: "Drinks", value: summary.drinks.qty },
+          { label: "Drinks/Tea", value: summary.drinks.qty },
           { label: "Cups used", value: summary.cups },
           { label: "Average", value: money(average) },
           { label: "Items on menu", value: menu.activeProducts },
@@ -426,10 +426,10 @@ export default async function TodayPage({ searchParams }: PageProps) {
           )}
         </Section>
 
-        <Section title="Drinks and food">
+        <Section title="Drinks/Tea and food">
           <SplitBar
             parts={[
-              { key: "drinks", label: "Drinks", value: summary.drinks.pesewas, amount: money(summary.drinks.pesewas) },
+              { key: "drinks", label: "Drinks/Tea", value: summary.drinks.pesewas, amount: money(summary.drinks.pesewas) },
               { key: "shawarma", label: "Shawarma", value: summary.shawarma.pesewas, amount: money(summary.shawarma.pesewas) },
             ]}
           />

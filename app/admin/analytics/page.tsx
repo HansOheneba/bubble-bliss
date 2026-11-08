@@ -177,7 +177,7 @@ export default async function SalesPage({ searchParams }: PageProps) {
           {metric("Completed", first.statuses.completed, second.statuses.completed, count)}
           {metric("Cups used", first.cups, second.cups, count)}
           {metric("Shawarmas", first.shawarma.qty, second.shawarma.qty, count)}
-          {metric("Drinks", first.drinks.qty, second.drinks.qty, count)}
+          {metric("Drinks/Tea", first.drinks.qty, second.drinks.qty, count)}
           <p className="pt-2 text-xs text-muted-foreground">A is {nameOf(a)}. B is {nameOf(b)}.</p>
         </Section>
         <Section title="How people paid">
@@ -311,9 +311,9 @@ export default async function SalesPage({ searchParams }: PageProps) {
           )}
         </Section>
 
-        <Section title="Drinks and food">
+        <Section title="Drinks/Tea and food">
           <Ledger>
-            <LedgerRow label="Drinks" detail={`${summary.drinks.qty.toLocaleString("en-GH")} sold`} value={money(summary.drinks.pesewas)} />
+            <LedgerRow label="Drinks/Tea" detail={`${summary.drinks.qty.toLocaleString("en-GH")} sold`} value={money(summary.drinks.pesewas)} />
             <LedgerRow label="Shawarma" detail={`${summary.shawarma.qty.toLocaleString("en-GH")} sold`} value={money(summary.shawarma.pesewas)} />
           </Ledger>
         </Section>
