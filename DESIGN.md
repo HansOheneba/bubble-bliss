@@ -26,7 +26,8 @@
 - `destructive`: red. Cancel and delete only.
 
 ## Components
-- `Ledger` and `LedgerRow`: label, dotted leader, value. The core pattern.
+- `Ledger` and `LedgerRow`: label, dotted leader, value. For detail screens.
+- Today is graphical: `PaceChart`, `SplitBar`, `RankBars`, `StatStrip`. Numbers and shapes first, almost no sentences.
 - `Rule`: the dashed divider.
 - Buttons: 6px corners, one primary per screen, press scales to 0.97.
 - Icons: lucide only, in navigation and where a word would not fit.

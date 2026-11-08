@@ -87,6 +87,18 @@ const getShawarmaIds = unstable_cache(
   { revalidate: 300 },
 );
 
+/** Product photos by name, so top sellers can show what they are. */
+export const getProductImages = unstable_cache(
+  async (): Promise<Record<string, string>> => {
+    const { data, error } = await createAdminClient().from("products").select("name, image");
+    if (error) throw new Error(`Product images: ${error.message}`);
+    const rows = (data ?? []) as { name: string; image: string | null }[];
+    return Object.fromEntries(rows.flatMap((p) => (p.image ? [[p.name, p.image]] : [])));
+  },
+  ["admin-product-images"],
+  { revalidate: 300 },
+);
+
 // ── Reading orders for a period ───────────────────────────────────────────────
 
 export function fetchPeriod(
