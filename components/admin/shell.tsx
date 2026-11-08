@@ -27,9 +27,9 @@ type NavItem = {
 };
 
 const NAV: NavItem[] = [
-  { label: "Today", href: "/admin", icon: CalendarDays, matches: [] },
+  { label: "Dashboard", href: "/admin", icon: CalendarDays, matches: [] },
   { label: "Orders", href: "/admin/orders", icon: ReceiptText, matches: ["/admin/orders"] },
-  { label: "Sales", href: "/admin/analytics", icon: ChartNoAxesColumn, matches: ["/admin/analytics"] },
+  { label: "Analytics", href: "/admin/analytics", icon: ChartNoAxesColumn, matches: ["/admin/analytics"] },
   {
     label: "Menu",
     href: "/admin/products",
@@ -140,7 +140,7 @@ export default function AdminShell({ children }: { children: ReactNode }) {
 
       {/* Phone: logo and settings on top */}
       <header className="flex items-center justify-between h-12 px-4 border-b shrink-0 bg-background md:hidden">
-        <Link href="/admin" prefetch={false} aria-label="Today" className="block">
+        <Link href="/admin" prefetch={false} aria-label="Dashboard" className="block">
           <Logo size={56} />
         </Link>
         <div className="flex items-center gap-1">
@@ -161,7 +161,7 @@ export default function AdminShell({ children }: { children: ReactNode }) {
         ref={scroller}
         className="flex-1 w-full min-h-0 px-4 pt-5 pb-8 overflow-y-auto overscroll-contain md:overflow-visible md:pl-56 md:pr-8 md:pt-8 md:pb-12 lg:pr-16"
       >
-        <div className="max-w-4xl">{children}</div>
+        <div data-page-content className="max-w-4xl">{children}</div>
       </main>
 
       {/*

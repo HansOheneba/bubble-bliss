@@ -1,10 +1,10 @@
-import Link from "next/link";
 
 import DatePicker from "@/components/admin/date-picker";
+import { PendingLink } from "@/components/admin/pending";
 import { Empty, PageHeader, Segments } from "@/components/admin/ledger";
 import { requireAdmin } from "@/lib/admin/auth";
 import { money, plural, shortDay } from "@/lib/admin/format";
-import { fetchOrders, getBranches } from "@/lib/admin/queries";
+import { fetchOrders, getBranches, getShawarmaIds } from "@/lib/admin/queries";
 import { getDayBoundsUtc, ghanaToday } from "@/lib/range-metrics";
 import OrdersList from "./orders-list";
 import OrdersSearch from "./orders-search";
@@ -26,6 +26,7 @@ type PageProps = {
     show?: string;
     pay?: string;
     source?: string;
+    sort?: string;
     limit?: string;
   }>;
 };
@@ -58,6 +59,7 @@ export default async function OrdersPage({ searchParams }: PageProps) {
   const show =
     params.show === "open" ||
     params.show === "unpaid" ||
+    params.show === "paid" ||
     params.show === "completed" ||
     params.show === "cancelled"
       ? params.show
@@ -70,7 +72,10 @@ export default async function OrdersPage({ searchParams }: PageProps) {
   const branch = branches.find((b) => b.slug === params.branch) ?? null;
   const [from, to] = resolveDays(day, dateKey);
 
+  const oldestFirst = params.sort === "queue";
+  const shawarmaIds = await getShawarmaIds();
   const { orders, total } = await fetchOrders({
+    oldestFirst,
     from,
     to,
     branchId: branch?.id ?? null,
@@ -87,6 +92,7 @@ export default async function OrdersPage({ searchParams }: PageProps) {
     show?: string | null;
     pay?: string | null;
     source?: string | null;
+    sort?: string | null;
     limit?: number;
   }) => {
     const query = new URLSearchParams();
@@ -102,6 +108,8 @@ export default async function OrdersPage({ searchParams }: PageProps) {
     if (nextPay) query.set("pay", nextPay);
     const nextSource = next.source === undefined ? source : next.source;
     if (nextSource) query.set("source", nextSource);
+    const nextSort = next.sort === undefined ? (oldestFirst ? "queue" : null) : next.sort;
+    if (nextSort) query.set("sort", nextSort);
     if (next.limit) query.set("limit", String(next.limit));
     const text = query.toString();
     return text ? `/admin/orders?${text}` : "/admin/orders";
@@ -143,6 +151,7 @@ export default async function OrdersPage({ searchParams }: PageProps) {
           options={[
             { label: "Every order", href: href({ show: null }), active: show === "all" },
             { label: "Still open", href: href({ show: "open" }), active: show === "open" },
+            { label: "Paid", href: href({ show: "paid" }), active: show === "paid" },
             { label: "Not paid", href: href({ show: "unpaid" }), active: show === "unpaid" },
             { label: "Completed", href: href({ show: "completed" }), active: show === "completed" },
             { label: "Cancelled", href: href({ show: "cancelled" }), active: show === "cancelled" },
@@ -162,6 +171,8 @@ export default async function OrdersPage({ searchParams }: PageProps) {
             { label: "Hubtel", href: href({ pay: payment === "hubtel" ? null : "hubtel" }), active: payment === "hubtel" },
             { label: "In store", href: href({ source: source === "instore" ? null : "instore" }), active: source === "instore", breakBefore: true },
             { label: "Online", href: href({ source: source === "online" ? null : "online" }), active: source === "online" },
+            { label: "Latest first", href: href({ sort: null }), active: !oldestFirst, breakBefore: true },
+            { label: "Queue, oldest first", href: href({ sort: "queue" }), active: oldestFirst },
           ]}
         />
       </div>
@@ -175,20 +186,17 @@ export default async function OrdersPage({ searchParams }: PageProps) {
               : "None. Everything is tidy here."}
         </Empty>
       ) : (
-        <OrdersList orders={orders} today={ghanaToday()} groupByDay={day !== "today" && day !== "yesterday" && day !== "date"} />
+        <OrdersList orders={orders} today={ghanaToday()} shawarmaIds={shawarmaIds} groupByDay={day !== "today" && day !== "yesterday" && day !== "date"} />
       )}
 
       {orders.length < total && limit < MAX_LIMIT && (
         <div className="mt-4">
-          <Link
+          <PendingLink
             href={href({ limit: limit + PAGE_SIZE })}
-            prefetch={false}
-            scroll={false}
-            data-press
             className="block w-full py-2.5 text-sm font-medium text-center border rounded-md hover:bg-accent"
           >
             Show {Math.min(PAGE_SIZE, total - orders.length)} more of {total.toLocaleString("en-GH")}
-          </Link>
+          </PendingLink>
         </div>
       )}
       {orders.length < total && limit >= MAX_LIMIT && (

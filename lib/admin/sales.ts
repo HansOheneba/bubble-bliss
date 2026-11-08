@@ -4,13 +4,14 @@ import { hourLabel, money, plural, shortDay } from "@/lib/admin/format";
 import {
   fetchPeriod,
   fetchTotals,
+  getAllTellers,
   getMonthlyHistory,
   summarize,
   type BranchOption,
 } from "@/lib/admin/queries";
 import { getDayBoundsUtc, ghanaToday } from "@/lib/range-metrics";
 
-export type PeriodKey = "7d" | "30d" | "month" | "last" | "all";
+export type PeriodKey = "today" | "7d" | "30d" | "month" | "last" | "all" | `day:${string}`;
 
 const DAY_MS = 86_400_000;
 
@@ -24,6 +25,16 @@ type Resolved = {
 
 function resolvePeriod(key: PeriodKey): Resolved {
   const [todayStart, todayEnd] = getDayBoundsUtc(ghanaToday());
+  if (key === "today" || key.startsWith("day:")) {
+    const [from, to] = key === "today" ? [todayStart, todayEnd] : getDayBoundsUtc(key.slice(4));
+    return {
+      from,
+      to,
+      previousFrom: new Date(from.getTime() - 7 * DAY_MS),
+      previousTo: new Date(to.getTime() - 7 * DAY_MS),
+      compareLabel: "the same day last week",
+    };
+  }
   const monthStart = new Date(Date.UTC(todayStart.getUTCFullYear(), todayStart.getUTCMonth(), 1));
   const lastMonthStart = new Date(Date.UTC(todayStart.getUTCFullYear(), todayStart.getUTCMonth() - 1, 1));
 
@@ -70,14 +81,42 @@ function change(current: number, previous: number): string {
 async function buildSalesView(period: PeriodKey, branchId: number | null, branches: BranchOption[]) {
   const range = resolvePeriod(period);
 
-  const [orders, previous, history] = await Promise.all([
+  const [todayStart, todayEnd] = getDayBoundsUtc(ghanaToday());
+  const [orders, previous, history, tellers, todayOrders] = await Promise.all([
     fetchPeriod(range.from, range.to, branchId),
     range.previousFrom && range.previousTo
       ? fetchTotals(range.previousFrom, range.previousTo, branchId)
       : Promise.resolve(null),
     getMonthlyHistory(),
+    getAllTellers(),
+    fetchPeriod(todayStart, todayEnd, branchId),
   ]);
   const summary = await summarize(orders, branches);
+
+  // Every teller, including those with nothing in this period, like the old table.
+  const todayCounts = new Map<number, number>();
+  for (const order of todayOrders) {
+    if (order.teller_id !== null && order.payment_status === "paid" && order.status !== "cancelled") {
+      todayCounts.set(order.teller_id, (todayCounts.get(order.teller_id) ?? 0) + 1);
+    }
+  }
+  const tellerRows = tellers
+    .filter((teller) => branchId === null || teller.branchId === branchId)
+    .map((teller) => {
+      const row = summary.tellers.find((r) => r.key === String(teller.id));
+      return {
+        key: String(teller.id),
+        name: teller.name,
+        isActive: teller.isActive,
+        branch: branches.find((b) => b.id === teller.branchId)?.name.replace(" Branch", "") ?? "",
+        orders: row?.orders ?? 0,
+        pesewas: row?.pesewas ?? 0,
+        today: todayCounts.get(teller.id) ?? 0,
+        lastAt: row?.lastAt ?? null,
+      };
+    })
+    .sort((a, b) => b.pesewas - a.pesewas);
+  const noCashier = summary.tellers.find((r) => r.key === "none") ?? null;
 
   // Sales by day, or by month when the period is long.
   const firstDay =
@@ -131,12 +170,13 @@ async function buildSalesView(period: PeriodKey, branchId: number | null, branch
           }));
 
   // Regular customers, by the phone number on the order.
-  const customers = new Map<string, { name: string | null; orders: number; pesewas: number }>();
+  const customers = new Map<string, { name: string | null; orders: number; pesewas: number; lastAt: string | null }>();
   for (const order of orders) {
     const phone = order.phone?.trim();
     if (!phone || order.payment_status !== "paid" || order.status === "cancelled") continue;
-    const row = customers.get(phone) ?? { name: null, orders: 0, pesewas: 0 };
+    const row = customers.get(phone) ?? { name: null, orders: 0, pesewas: 0, lastAt: null };
     row.name = row.name ?? order.customer_name;
+    if (order.created_at && (!row.lastAt || order.created_at > row.lastAt)) row.lastAt = order.created_at;
     row.orders += 1;
     row.pesewas += order.total_pesewas;
     customers.set(phone, row);
@@ -172,6 +212,8 @@ async function buildSalesView(period: PeriodKey, branchId: number | null, branch
     topCustomers,
     mostFrequent,
     orderBars,
+    tellerRows,
+    noCashier,
     moneyDelta: previous ? change(summary.pesewas, previous.pesewas) : "",
     isUp: previous ? summary.pesewas >= previous.pesewas : true,
     average: summary.orders ? Math.round(summary.pesewas / summary.orders) : 0,

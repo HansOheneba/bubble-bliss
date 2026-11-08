@@ -883,7 +883,7 @@ export default function ProductsClient({
               className="gap-2"
             >
               <Plus className="size-4" aria-hidden />
-              Add item
+              Add product
             </Button>
           }
         />
@@ -895,8 +895,8 @@ export default function ProductsClient({
             type="search"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Find an item"
-            aria-label="Find an item"
+            placeholder="Find a product"
+            aria-label="Find a product"
             className="pl-9 h-11"
           />
         </div>

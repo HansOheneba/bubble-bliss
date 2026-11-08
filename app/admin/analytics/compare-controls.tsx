@@ -3,7 +3,8 @@
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useTransition } from "react";
 
-import { Segments } from "@/components/admin/ledger";
+import { useShowPending } from "@/components/admin/pending";
+import { Segments } from "@/components/admin/segments";
 import { cn } from "@/lib/utils";
 
 type Choice = { value: string; label: string };
@@ -24,6 +25,7 @@ export default function CompareControls({
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const [pending, startTransition] = useTransition();
+  useShowPending(pending);
 
   function setValue(key: "ca" | "cb", value: string) {
     const query = new URLSearchParams(searchParams.toString());

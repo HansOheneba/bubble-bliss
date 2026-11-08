@@ -3,7 +3,7 @@ import { createAdminClient } from "@/lib/supabase";
 import type { PosUser, Branch } from "@/lib/database.types";
 import PosUsersClient from "./pos-users-client";
 
-export const metadata = { title: "Till logins" };
+export const metadata = { title: "POS Users" };
 
 type PosUserWithBranch = PosUser & { branch: Branch | null };
 

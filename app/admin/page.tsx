@@ -11,6 +11,7 @@ import Link from "next/link";
 
 import AutoRefresh from "@/components/admin/auto-refresh";
 import DatePicker from "@/components/admin/date-picker";
+import { PendingLink } from "@/components/admin/pending";
 import {
   AlertChip,
   Change,
@@ -226,16 +227,13 @@ export default async function TodayPage({ searchParams }: PageProps) {
       <div>
         <h1 className="text-3xl font-bold tracking-tight truncate">{dayTitle(date, today)}</h1>
         <div className="flex items-center gap-1 mt-3">
-          <Link
+          <PendingLink
             href={query({ date: shiftDay(date, -1) })}
-            prefetch={false}
-            scroll={false}
-            data-press
             aria-label="Previous day"
             className="flex items-center justify-center border rounded-md size-9 shrink-0 hover:bg-accent"
           >
             <ChevronLeft className="size-5" aria-hidden />
-          </Link>
+          </PendingLink>
           <DatePicker
             value={date}
             max={today}
@@ -257,27 +255,21 @@ export default async function TodayPage({ searchParams }: PageProps) {
               <ChevronRight className="size-5" />
             </span>
           ) : (
-            <Link
+            <PendingLink
               href={query({ date: shiftDay(date, 1) })}
-              prefetch={false}
-              scroll={false}
-              data-press
               aria-label="Next day"
               className="flex items-center justify-center border rounded-md size-9 shrink-0 hover:bg-accent"
             >
               <ChevronRight className="size-5" aria-hidden />
-            </Link>
+            </PendingLink>
           )}
           {!isToday && (
-            <Link
+            <PendingLink
               href={query({ date: today })}
-              prefetch={false}
-              scroll={false}
-              data-press
               className="flex items-center h-9 px-3 text-sm font-medium rounded-md shrink-0 text-background bg-foreground"
             >
               Today
-            </Link>
+            </PendingLink>
           )}
         </div>
 
@@ -342,7 +334,7 @@ export default async function TodayPage({ searchParams }: PageProps) {
           { label: "Completed", value: summary.statuses.completed },
           { label: "Still open", value: summary.statuses.open },
           { label: "Shawarmas", value: summary.shawarma.qty },
-          { label: "Drinks", value: summary.drinks.qty },
+          { label: "Drinks/Tea", value: summary.drinks.qty },
           { label: "Cups used", value: summary.cups },
           { label: "Average", value: money(average) },
           { label: "Items on menu", value: menu.activeProducts },
@@ -426,10 +418,10 @@ export default async function TodayPage({ searchParams }: PageProps) {
           )}
         </Section>
 
-        <Section title="Drinks and food">
+        <Section title="Drinks/Tea and food">
           <SplitBar
             parts={[
-              { key: "drinks", label: "Drinks", value: summary.drinks.pesewas, amount: money(summary.drinks.pesewas) },
+              { key: "drinks", label: "Drinks/Tea", value: summary.drinks.pesewas, amount: money(summary.drinks.pesewas) },
               { key: "shawarma", label: "Shawarma", value: summary.shawarma.pesewas, amount: money(summary.shawarma.pesewas) },
             ]}
           />
@@ -466,14 +458,14 @@ export default async function TodayPage({ searchParams }: PageProps) {
           </Section>
         )}
 
-        <Section title="At the till">
+        <Section title="Tellers">
           {summary.tellers.length === 0 ? (
             <Empty>No sales yet.</Empty>
           ) : (
             <RankBars
               rows={summary.tellers.map((row) => ({
                 key: row.key,
-                label: row.key === "none" ? "No cashier" : row.label,
+                label: row.key === "none" ? "No teller" : row.label,
                 detail: String(row.orders),
                 value: row.pesewas,
                 display: money(row.pesewas),
