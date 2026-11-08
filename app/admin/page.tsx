@@ -1,18 +1,25 @@
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import {
+  ChevronLeft,
+  ChevronRight,
+  CircleDollarSign,
+  ClockAlert,
+  PackageX,
+  TrendingDown,
+  TrendingUp,
+} from "lucide-react";
 import Link from "next/link";
 
 import AutoRefresh from "@/components/admin/auto-refresh";
 import {
-  Bars,
-  Empty,
-  Ledger,
-  LedgerRow,
-  Rule,
-  Section,
-  Segments,
-} from "@/components/admin/ledger";
+  AlertChip,
+  PaceChart,
+  RankBars,
+  SplitBar,
+  StatStrip,
+} from "@/components/admin/glance";
+import { Empty, Section, Segments } from "@/components/admin/ledger";
 import { requireAdmin } from "@/lib/admin/auth";
-import { clock, hourLabel, money, paymentName, plural } from "@/lib/admin/format";
+import { clock, hourLabel, initials, money, paymentName } from "@/lib/admin/format";
 import {
   fetchAttention,
   fetchDayByHour,
@@ -20,6 +27,7 @@ import {
   fetchSoldOut,
   fetchTotals,
   getBranches,
+  getProductImages,
   summarize,
 } from "@/lib/admin/queries";
 import { getDayBoundsUtc, ghanaToday } from "@/lib/range-metrics";
@@ -57,6 +65,31 @@ function sameTimeLastWeek(lastWeekStart: Date, dayStart: Date): Date {
   return new Date(lastWeekStart.getTime() + (Date.now() - dayStart.getTime()));
 }
 
+const BUCKET_MINUTES = 15;
+
+type Timed = { at: string; pesewas: number };
+
+/** Running totals in 15-minute steps across the trading day. */
+function runningTotals(rows: Timed[], dayStart: Date, firstHour: number, lastHour: number): number[] {
+  const open = dayStart.getTime() + firstHour * 3_600_000;
+  const steps = ((lastHour - firstHour + 1) * 60) / BUCKET_MINUTES;
+  const totals = Array.from({ length: steps + 1 }, () => 0);
+  for (const row of rows) {
+    const minutes = (new Date(row.at).getTime() - open) / 60_000;
+    const step = Math.min(steps, Math.max(0, Math.ceil(minutes / BUCKET_MINUTES)));
+    totals[step] += row.pesewas;
+  }
+  for (let i = 1; i < totals.length; i++) totals[i] += totals[i - 1];
+  return totals;
+}
+
+/** How much of the trading day has happened, as a number of chart steps. */
+function stepsSoFar(dayStart: Date, firstHour: number, total: number): number {
+  const open = dayStart.getTime() + firstHour * 3_600_000;
+  const step = Math.ceil((Date.now() - open) / (BUCKET_MINUTES * 60_000));
+  return Math.min(total, Math.max(1, step + 1));
+}
+
 /** The most recent same weekday that actually traded. Closed days make a useless comparison. */
 async function findComparisonDay(dateKey: string, branchId: number | null): Promise<string> {
   for (let weeks = 1; weeks <= 4; weeks++) {
@@ -92,11 +125,12 @@ export default async function TodayPage({ searchParams }: PageProps) {
   const lastWeek = await findComparisonDay(date, branchId);
   const lastWeekName = comparisonName(lastWeek, date);
   const [lastWeekStart, lastWeekEnd] = getDayBoundsUtc(lastWeek);
-  const [orders, compareRows, attention, soldOut] = await Promise.all([
+  const [orders, compareRows, attention, soldOut, productImages] = await Promise.all([
     fetchPeriod(dayStart, dayEnd, branchId),
     fetchDayByHour(lastWeekStart, lastWeekEnd, branchId),
     fetchAttention(dayStart, dayEnd, branchId),
     isToday ? fetchSoldOut() : Promise.resolve<string[]>([]),
+    getProductImages(),
   ]);
   const summary = await summarize(orders, branches);
 
@@ -105,23 +139,32 @@ export default async function TodayPage({ searchParams }: PageProps) {
   const compareSoFar = compareRows
     .filter((row) => new Date(row.at) < compareEnd)
     .reduce((sum, row) => sum + row.pesewas, 0);
-  const compareHours = Array.from({ length: 24 }, () => 0);
-  for (const row of compareRows) compareHours[new Date(row.at).getUTCHours()] += row.pesewas;
-
   const difference = summary.pesewas - compareSoFar;
-  const busyHours = [
-    ...summary.hours.filter((h) => h.orders > 0).map((h) => h.hour),
-    ...compareHours.flatMap((value, hour) => (value > 0 ? [hour] : [])),
+
+  const paid = orders.flatMap((o) =>
+    o.payment_status === "paid" && o.status !== "cancelled" && o.created_at
+      ? [{ at: o.created_at, pesewas: o.total_pesewas }]
+      : [],
+  );
+  const hoursUsed = [
+    ...paid.map((row) => new Date(row.at).getUTCHours()),
+    ...compareRows.map((row) => new Date(row.at).getUTCHours()),
   ];
-  const firstHour = Math.min(14, ...busyHours);
-  const lastHour = Math.max(22, ...busyHours);
-  const bars = summary.hours.slice(firstHour, lastHour + 1).map((h) => ({
-    key: String(h.hour),
-    label: hourLabel(h.hour),
-    value: h.pesewas,
-    ghost: compareHours[h.hour],
-    title: `${hourLabel(h.hour)}: ${money(h.pesewas)}, ${plural(h.orders, "order")}`,
-  }));
+  const firstHour = Math.min(14, ...hoursUsed);
+  const lastHour = Math.max(22, ...hoursUsed);
+  const compareLine = runningTotals(compareRows, lastWeekStart, firstHour, lastHour);
+  const dayLine = runningTotals(paid, dayStart, firstHour, lastHour);
+  const todayLine = isToday
+    ? dayLine.slice(0, stepsSoFar(dayStart, firstHour, dayLine.length))
+    : dayLine;
+  const chartPeak = Math.max(...todayLine, ...compareLine);
+  const chartLabels = [
+    firstHour,
+    Math.round((firstHour + lastHour + 1) / 2),
+    lastHour + 1,
+  ].map((hour) => hourLabel(hour % 24));
+
+  const average = summary.orders ? Math.round(summary.pesewas / summary.orders) : 0;
 
   const query = (next: { date?: string; branch?: string | null }) => {
     const search = new URLSearchParams();
@@ -187,161 +230,154 @@ export default async function TodayPage({ searchParams }: PageProps) {
         />
       </div>
 
-      {/* The one number the owner opens this for */}
+      {/* The number, and whether it is good */}
       <div>
         <p className="font-display text-6xl font-bold tracking-tight tabular-nums sm:text-7xl">
           {money(summary.pesewas)}
         </p>
-        <p className="mt-2 text-base">
-          {summary.orders === 0 ? (
-            isToday ? "No paid orders yet today." : "No paid orders on this day."
-          ) : (
-            <>
-              {plural(summary.orders, "paid order")}.{" "}
-              {compareSoFar > 0 && (
-                <span className={cn("font-medium", difference >= 0 ? "text-good" : "text-attention")}>
-                  {money(Math.abs(difference))} {difference >= 0 ? "ahead of" : "behind"}{" "}
-                  {lastWeekName}
-                  {isToday ? " at this time" : ""}.
-                </span>
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-2">
+          {compareSoFar > 0 && (
+            <span
+              className={cn(
+                "flex items-center gap-1.5 text-lg font-bold tabular-nums",
+                difference >= 0 ? "text-good" : "text-attention",
               )}
-            </>
+            >
+              {difference >= 0 ? (
+                <TrendingUp className="size-5" aria-hidden />
+              ) : (
+                <TrendingDown className="size-5" aria-hidden />
+              )}
+              {difference >= 0 ? "+" : "-"}
+              {money(Math.abs(difference))}
+              <span className="sr-only">compared with {lastWeekName}</span>
+            </span>
           )}
-        </p>
-        {isToday && summary.lastOrderAt && (
-          <p className="mt-1 text-sm text-muted-foreground">
-            Last order at {clock(summary.lastOrderAt)}. This page updates by itself.
-          </p>
-        )}
+          {isToday && summary.lastOrderAt && (
+            <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <span aria-hidden className="rounded-full size-1.5 bg-good" />
+              Last order {clock(summary.lastOrderAt)}
+            </span>
+          )}
+        </div>
       </div>
 
+      <PaceChart
+        today={todayLine}
+        compare={compareLine}
+        labels={chartLabels}
+        todayLabel={isToday ? "Tonight" : dayTitle(date, today)}
+        compareLabel={lastWeekName}
+        maxLabel={money(chartPeak)}
+      />
+
+      <StatStrip
+        stats={[
+          { label: "Paid orders", value: summary.orders },
+          { label: "Average", value: money(average) },
+          { label: "Cups used", value: summary.cups },
+        ]}
+      />
+
       {(attention.unpaidToday > 0 || attention.staleOpen > 0 || soldOut.length > 0) && (
-        <section aria-label="Needs a look" className="p-3 text-sm rounded-md bg-attention-soft">
-          <ul className="flex flex-col gap-1.5">
-            {attention.unpaidToday > 0 && (
-              <li>
-                <Link
-                  href={`/admin/orders?${dayQuery}&show=unpaid${branchQuery}`}
-                  prefetch={false}
-                  className="font-medium underline underline-offset-4 decoration-attention"
-                >
-                  {plural(attention.unpaidToday, "order")} not paid yet
-                </Link>{" "}
-                on this day.
-              </li>
-            )}
-            {attention.staleOpen > 0 && (
-              <li>
-                <Link
-                  href={`/admin/orders?day=all&show=open${branchQuery}`}
-                  prefetch={false}
-                  className="font-medium underline underline-offset-4 decoration-attention"
-                >
-                  {plural(attention.staleOpen, "paid order")} from earlier days
-                </Link>{" "}
-                never marked completed. Cups only count once they are.
-              </li>
-            )}
-            {soldOut.length > 0 && (
-              <li>
-                <Link
-                  href="/admin/products?stock=out"
-                  prefetch={false}
-                  className="font-medium underline underline-offset-4 decoration-attention"
-                >
-                  Sold out:
-                </Link>{" "}
-                {soldOut.join(", ")}.
-              </li>
-            )}
-          </ul>
-        </section>
+        <nav aria-label="Needs a look" className="flex gap-2 -mx-4 px-4 overflow-x-auto sm:mx-0 sm:px-0 [scrollbar-width:none]">
+          {attention.unpaidToday > 0 && (
+            <AlertChip
+              href={`/admin/orders?${dayQuery}&show=unpaid${branchQuery}`}
+              icon={CircleDollarSign}
+              count={attention.unpaidToday}
+              label="not paid"
+            />
+          )}
+          {soldOut.length > 0 && (
+            <AlertChip href="/admin/products?stock=out" icon={PackageX} count={soldOut.length} label="sold out" />
+          )}
+          {attention.staleOpen > 0 && (
+            <AlertChip
+              href={`/admin/orders?day=all&show=open${branchQuery}`}
+              icon={ClockAlert}
+              count={attention.staleOpen}
+              label="old orders left open"
+            />
+          )}
+        </nav>
       )}
 
       <div className="grid gap-8 md:grid-cols-2 md:gap-x-12">
         <Section title="Cash up">
-          <Ledger>
-            {summary.methods.length === 0 && <LedgerRow label="Cash" value={money(0)} />}
-            {summary.methods.map((row) => (
-              <LedgerRow
-                key={row.key}
-                label={paymentName(row.key)}
-                detail={plural(row.orders, "order")}
-                value={money(row.pesewas)}
-              />
-            ))}
-            <Rule className="my-1" />
-            <LedgerRow label="Total" value={money(summary.pesewas)} strong />
-            <LedgerRow label="Cups used" detail="completed orders" value={summary.cups} />
-          </Ledger>
-        </Section>
-
-        <Section title="At the till">
-          {summary.tellers.length === 0 ? (
-            <Empty>No cashier has taken a paid order yet.</Empty>
-          ) : (
-            <Ledger>
-              {summary.tellers.map((row) => (
-                <LedgerRow
-                  key={row.key}
-                  label={row.label}
-                  detail={plural(row.orders, "order")}
-                  value={money(row.pesewas)}
-                />
-              ))}
-            </Ledger>
-          )}
+          <SplitBar
+            parts={
+              summary.methods.length > 0
+                ? summary.methods.map((row) => ({
+                    key: row.key,
+                    label: paymentName(row.key),
+                    value: row.pesewas,
+                    amount: money(row.pesewas),
+                  }))
+                : [{ key: "none", label: "No sales yet", value: 0, amount: money(0) }]
+            }
+          />
         </Section>
 
         {!branch && branches.length > 1 && (
-          <Section title="By branch">
-            <Ledger>
-              {branches.map((b) => {
+          <Section title="Branches">
+            <SplitBar
+              parts={branches.map((b) => {
                 const row = summary.branches.find((r) => r.key === String(b.id));
-                return (
-                  <LedgerRow
-                    key={b.id}
-                    label={b.name.replace(" Branch", "")}
-                    detail={row ? plural(row.orders, "order") : "no sales yet"}
-                    value={money(row?.pesewas ?? 0)}
-                  />
-                );
+                return {
+                  key: String(b.id),
+                  label: b.name.replace(" Branch", ""),
+                  value: row?.pesewas ?? 0,
+                  amount: money(row?.pesewas ?? 0),
+                };
               })}
-            </Ledger>
+            />
           </Section>
         )}
+
+        <Section title="At the till">
+          {summary.tellers.length === 0 ? (
+            <Empty>No sales yet.</Empty>
+          ) : (
+            <RankBars
+              rows={summary.tellers.map((row) => ({
+                key: row.key,
+                label: row.key === "none" ? "No cashier" : row.label,
+                detail: String(row.orders),
+                value: row.pesewas,
+                display: money(row.pesewas),
+                initials: row.key === "none" ? "?" : initials(row.label),
+              }))}
+            />
+          )}
+        </Section>
 
         <Section title="Selling most">
           {summary.items.length === 0 ? (
             <Empty>Nothing sold yet.</Empty>
           ) : (
-            <Ledger>
-              {summary.items.slice(0, 5).map((item) => (
-                <LedgerRow
-                  key={`${item.name}${item.size}`}
-                  label={item.name}
-                  detail={item.size ?? undefined}
-                  value={`${item.qty} sold`}
-                />
-              ))}
-            </Ledger>
+            <RankBars
+              rows={summary.items.slice(0, 5).map((item) => ({
+                key: `${item.name}${item.size}`,
+                label: item.name,
+                detail: item.size ?? undefined,
+                value: item.qty,
+                display: String(item.qty),
+                image: productImages[item.name],
+              }))}
+            />
           )}
         </Section>
       </div>
 
-      <Section title="Through the evening" note={`Pale bars: ${lastWeekName}`}>
-        <Bars bars={bars} labelEvery={2} />
-      </Section>
-
-      <p className="text-sm">
-        <Link
-          href={`/admin/orders?${dayQuery}${branchQuery}`}
-          prefetch={false}
-          className="font-medium underline underline-offset-4 text-primary"
-        >
-          See every order on this day
-        </Link>
-      </p>
+      <Link
+        href={`/admin/orders?${dayQuery}${branchQuery}`}
+        prefetch={false}
+        data-press
+        className="block w-full py-2.5 text-sm font-medium text-center border rounded-md hover:bg-accent"
+      >
+        See all {summary.orders > 0 ? `${summary.orders} ` : ""}orders
+      </Link>
     </div>
   );
 }
