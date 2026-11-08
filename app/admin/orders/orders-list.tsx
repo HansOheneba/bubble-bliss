@@ -199,9 +199,27 @@ function OrderSheet({
                     </div>
                   )}
                   {isOpen && isPaid && (
-                    <Button disabled={saving} onClick={() => send({ status: "completed" })}>
-                      {saving ? "Saving" : "Mark completed"}
-                    </Button>
+                    <>
+                      <div className="grid grid-cols-3 gap-2">
+                        {[
+                          ["confirmed", "Confirmed"],
+                          ["preparing", "Preparing"],
+                          ["ready", "Ready"],
+                        ].map(([value, label]) => (
+                          <Button
+                            key={value}
+                            variant={order.status === value ? "secondary" : "outline"}
+                            disabled={saving || order.status === value}
+                            onClick={() => send({ status: value })}
+                          >
+                            {label}
+                          </Button>
+                        ))}
+                      </div>
+                      <Button disabled={saving} onClick={() => send({ status: "completed" })}>
+                        {saving ? "Saving" : "Mark completed"}
+                      </Button>
+                    </>
                   )}
                   {isCancelled && (
                     <Button variant="outline" disabled={saving} onClick={() => send({ status: "pending" })}>

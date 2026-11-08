@@ -11,7 +11,7 @@ import { createAdminClient } from "@/lib/supabase";
 export const OPEN_STATUSES = ["pending", "confirmed", "preparing", "ready"];
 
 const SLIM_SELECT =
-  "id, created_at, total_pesewas, status, payment_method, payment_status, phone, customer_name, teller_id, branch_id, items:order_items(product_id, product_name, variant_label, quantity, unit_pesewas, toppings:order_item_toppings(topping_name, price_applied_pesewas))";
+  "id, created_at, total_pesewas, status, payment_method, payment_status, phone, customer_name, teller_id, branch_id, order_source, items:order_items(product_id, product_name, variant_label, quantity, unit_pesewas, toppings:order_item_toppings(topping_name, price_applied_pesewas))";
 
 type SlimItem = {
   product_id: number | null;
@@ -33,13 +33,32 @@ export type SlimOrder = {
   customer_name: string | null;
   teller_id: number | null;
   branch_id: number | null;
+  order_source: string | null;
   items: SlimItem[];
 };
 
-export type Row = { key: string; label: string; orders: number; pesewas: number };
+export type Row = {
+  key: string;
+  label: string;
+  orders: number;
+  pesewas: number;
+  lastAt?: string | null;
+};
 export type ItemRow = { name: string; size: string | null; qty: number; pesewas: number };
 
+export type FoodSplit = {
+  qty: number;
+  pesewas: number;
+  sizes: { size: string; qty: number }[];
+  items: ItemRow[];
+};
+
 export type Summary = {
+  shawarma: FoodSplit;
+  drinks: { qty: number; pesewas: number };
+  /** Every order on the day or period, whatever its state. */
+  statuses: { completed: number; open: number; unpaid: number; cancelled: number };
+  sources: Row[];
   pesewas: number;
   orders: number;
   cups: number;
@@ -210,6 +229,8 @@ export async function summarize(
   const tellers = new Map<string, Row>();
   const items = new Map<string, ItemRow>();
   const toppings = new Map<string, number>();
+  const shawarmaItems = new Map<string, ItemRow>();
+  const drinks = { qty: 0, pesewas: 0 };
   const hours = Array.from({ length: 24 }, (_, hour) => ({ hour, pesewas: 0, orders: 0 }));
 
   let pesewas = 0;
@@ -217,8 +238,15 @@ export async function summarize(
   let cups = 0;
   let lastOrderAt: string | null = null;
 
+  const statuses = { completed: 0, open: 0, unpaid: 0, cancelled: 0 };
+  const sources = new Map<string, Row>();
+
   for (const order of orders) {
     cups += countCupsInOrder(order.items, shawarmaIds, order.status, order.payment_status);
+    if (order.status === "cancelled") statuses.cancelled += 1;
+    else if (order.payment_status !== "paid") statuses.unpaid += 1;
+    else if (order.status === "completed" || order.status === "delivered") statuses.completed += 1;
+    else statuses.open += 1;
     if (!isRevenueCountable(order)) continue;
 
     pesewas += order.total_pesewas;
@@ -245,6 +273,12 @@ export async function summarize(
         : (tellerNames[String(order.teller_id)] ?? "Former cashier"),
       order.total_pesewas,
     );
+    const tellerRow = tellers.get(String(order.teller_id ?? "none"));
+    if (tellerRow && order.created_at && (!tellerRow.lastAt || order.created_at > tellerRow.lastAt)) {
+      tellerRow.lastAt = order.created_at;
+    }
+    const source = order.order_source ?? "online";
+    add(sources, source, source === "instore" ? "In store" : "Online", order.total_pesewas);
     if (order.created_at) {
       const bucket = hours[new Date(order.created_at).getUTCHours()];
       bucket.pesewas += order.total_pesewas;
@@ -261,15 +295,45 @@ export async function summarize(
       };
       const toppingTotal = item.toppings.reduce((s, t) => s + t.price_applied_pesewas, 0);
       row.qty += item.quantity;
-      row.pesewas += (item.unit_pesewas + toppingTotal) * item.quantity;
+      const lineTotal = (item.unit_pesewas + toppingTotal) * item.quantity;
+      row.pesewas += lineTotal;
       items.set(key, row);
+
+      if (item.product_id !== null && shawarmaIds.has(item.product_id)) {
+        const size = item.variant_label ?? "Regular";
+        const food = shawarmaItems.get(key) ?? { name: item.product_name, size, qty: 0, pesewas: 0 };
+        food.qty += item.quantity;
+        food.pesewas += lineTotal;
+        shawarmaItems.set(key, food);
+      } else {
+        drinks.qty += item.quantity;
+        drinks.pesewas += lineTotal;
+      }
       for (const topping of item.toppings) {
         toppings.set(topping.topping_name, (toppings.get(topping.topping_name) ?? 0) + 1);
       }
     }
   }
 
+  const shawarmaRows = [...shawarmaItems.values()].sort((a, b) => b.qty - a.qty);
+  const sizes = new Map<string, number>();
+  for (const row of shawarmaRows) {
+    const size = row.size ?? "Regular";
+    sizes.set(size, (sizes.get(size) ?? 0) + row.qty);
+  }
+
   return {
+    shawarma: {
+      qty: shawarmaRows.reduce((sum, row) => sum + row.qty, 0),
+      pesewas: shawarmaRows.reduce((sum, row) => sum + row.pesewas, 0),
+      sizes: [...sizes.entries()]
+        .map(([size, qty]) => ({ size, qty }))
+        .sort((a, b) => b.qty - a.qty),
+      items: shawarmaRows,
+    },
+    drinks,
+    statuses,
+    sources: byMoney(sources.values()),
     pesewas,
     orders: count,
     cups,
@@ -291,7 +355,7 @@ export type MonthRow = {
   month: string;
   pesewas: number;
   orders: number;
-  branches: Record<string, number>;
+  branches: Record<string, { pesewas: number; orders: number }>;
 };
 
 type HistoryRow = TotalRow & { created_at: string | null; branch_id: number | null };
@@ -319,12 +383,15 @@ export const getMonthlyHistory = unstable_cache(
       row.pesewas += order.total_pesewas;
       row.orders += 1;
       const branch = String(order.branch_id ?? "");
-      row.branches[branch] = (row.branches[branch] ?? 0) + order.total_pesewas;
+      const branchRow = row.branches[branch] ?? { pesewas: 0, orders: 0 };
+      branchRow.pesewas += order.total_pesewas;
+      branchRow.orders += 1;
+      row.branches[branch] = branchRow;
       months.set(month, row);
     }
     return [...months.values()].sort((a, b) => b.month.localeCompare(a.month));
   },
-  ["admin-monthly-history"],
+  ["admin-monthly-history-v2"],
   { revalidate: 600 },
 );
 
@@ -367,7 +434,9 @@ export type OrderFilters = {
   from: Date | null;
   to: Date | null;
   branchId: number | null;
-  show: "all" | "open" | "unpaid";
+  show: "all" | "open" | "unpaid" | "completed" | "cancelled";
+  payment: string | null;
+  source: string | null;
   search: string;
   limit: number;
 };
@@ -408,6 +477,10 @@ export async function fetchOrders(
   if (filters.to) query = query.lt("created_at", filters.to.toISOString());
   if (filters.branchId !== null) query = query.eq("branch_id", filters.branchId);
   if (filters.show === "open") query = query.in("status", OPEN_STATUSES);
+  if (filters.show === "completed") query = query.in("status", ["completed", "delivered"]);
+  if (filters.show === "cancelled") query = query.eq("status", "cancelled");
+  if (filters.payment) query = query.eq("payment_method", filters.payment);
+  if (filters.source) query = query.eq("order_source", filters.source);
   if (filters.show === "unpaid") {
     query = query.neq("payment_status", "paid").neq("status", "cancelled");
   }
@@ -460,14 +533,41 @@ export async function fetchAttention(
 
 // ── Sold-out items, for the Today screen ──────────────────────────────────────
 
-export async function fetchSoldOut(): Promise<string[]> {
+export async function fetchMenuState(): Promise<{ activeProducts: number; soldOut: string[] }> {
   const db = createAdminClient();
-  const { data, error } = await db
-    .from("products")
-    .select("name")
-    .eq("is_active", true)
-    .eq("in_stock", false)
-    .order("name");
-  if (error) throw new Error(`Products: ${error.message}`);
-  return ((data ?? []) as { name: string }[]).map((p) => p.name);
+  const [products, toppings] = await Promise.all([
+    db.from("products").select("name, is_active, in_stock"),
+    db.from("toppings").select("name, is_active, in_stock"),
+  ]);
+  if (products.error) throw new Error(`Products: ${products.error.message}`);
+  if (toppings.error) throw new Error(`Toppings: ${toppings.error.message}`);
+  type MenuRow = { name: string; is_active: boolean | null; in_stock: boolean | null };
+  const productRows = (products.data ?? []) as MenuRow[];
+  const toppingRows = (toppings.data ?? []) as MenuRow[];
+  return {
+    activeProducts: productRows.filter((p) => p.is_active).length,
+    soldOut: [...productRows, ...toppingRows]
+      .filter((row) => row.is_active && !row.in_stock)
+      .map((row) => row.name),
+  };
 }
+
+/** This month so far against the same number of days last month. */
+export const getMonthPace = unstable_cache(
+  async (branchId: number | null): Promise<{
+    now: { pesewas: number; orders: number };
+    before: { pesewas: number; orders: number };
+  }> => {
+    const today = new Date();
+    const start = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), 1));
+    const lastStart = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth() - 1, 1));
+    const lastSameDay = new Date(lastStart.getTime() + (today.getTime() - start.getTime()));
+    const [now, before] = await Promise.all([
+      fetchTotals(start, today, branchId),
+      fetchTotals(lastStart, lastSameDay, branchId),
+    ]);
+    return { now, before };
+  },
+  ["admin-month-pace"],
+  { revalidate: 60 },
+);

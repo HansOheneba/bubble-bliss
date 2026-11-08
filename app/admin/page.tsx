@@ -10,23 +10,28 @@ import {
 import Link from "next/link";
 
 import AutoRefresh from "@/components/admin/auto-refresh";
+import DatePicker from "@/components/admin/date-picker";
 import {
   AlertChip,
+  Change,
+  MonthBars,
   PaceChart,
   RankBars,
   SplitBar,
   StatStrip,
 } from "@/components/admin/glance";
-import { Empty, Section, Segments } from "@/components/admin/ledger";
+import { Bars, Empty, Section, Segments } from "@/components/admin/ledger";
 import { requireAdmin } from "@/lib/admin/auth";
-import { clock, hourLabel, initials, money, paymentName } from "@/lib/admin/format";
+import { clock, hourLabel, initials, money, paymentName, plural } from "@/lib/admin/format";
 import {
   fetchAttention,
   fetchDayByHour,
   fetchPeriod,
-  fetchSoldOut,
+  fetchMenuState,
   fetchTotals,
   getBranches,
+  getMonthPace,
+  getMonthlyHistory,
   getProductImages,
   summarize,
 } from "@/lib/admin/queries";
@@ -125,14 +130,36 @@ export default async function TodayPage({ searchParams }: PageProps) {
   const lastWeek = await findComparisonDay(date, branchId);
   const lastWeekName = comparisonName(lastWeek, date);
   const [lastWeekStart, lastWeekEnd] = getDayBoundsUtc(lastWeek);
-  const [orders, compareRows, attention, soldOut, productImages] = await Promise.all([
+  const [orders, compareRows, attention, menu, productImages, monthPace, history] = await Promise.all([
     fetchPeriod(dayStart, dayEnd, branchId),
     fetchDayByHour(lastWeekStart, lastWeekEnd, branchId),
     fetchAttention(dayStart, dayEnd, branchId),
-    isToday ? fetchSoldOut() : Promise.resolve<string[]>([]),
+    fetchMenuState(),
     getProductImages(),
+    getMonthPace(branchId),
+    getMonthlyHistory(),
   ]);
   const summary = await summarize(orders, branches);
+  const soldOut = isToday ? menu.soldOut : [];
+  const average = summary.orders ? Math.round(summary.pesewas / summary.orders / 100) * 100 : 0;
+
+  // Newest six months with the change on the month before, for this branch or all.
+  const monthValues = history.map((row) => ({
+    key: row.month,
+    label: new Date(`${row.month}-01T00:00:00Z`).toLocaleDateString("en-GH", {
+      timeZone: "UTC",
+      month: "long",
+      year: "numeric",
+    }),
+    orders: branch ? (row.branches[String(branch.id)]?.orders ?? 0) : row.orders,
+    pesewas: branch ? (row.branches[String(branch.id)]?.pesewas ?? 0) : row.pesewas,
+  }));
+  const monthRows = monthValues.slice(0, 6).map((row, index) => ({
+    ...row,
+    money: money(row.pesewas),
+    previous: monthValues[index + 1] ?? null,
+    partial: row.key === today.slice(0, 7),
+  }));
 
   // Tonight so far is compared with the same point in the evening that day.
   const compareEnd = isToday ? sameTimeLastWeek(lastWeekStart, dayStart) : lastWeekEnd;
@@ -158,14 +185,26 @@ export default async function TodayPage({ searchParams }: PageProps) {
     ? dayLine.slice(0, stepsSoFar(dayStart, firstHour, dayLine.length))
     : dayLine;
   const chartPeak = Math.max(...todayLine, ...compareLine);
+  const hourSlice = summary.hours.slice(firstHour, lastHour + 1);
+  const hourBars = {
+    money: hourSlice.map((h) => ({
+      key: String(h.hour),
+      label: hourLabel(h.hour),
+      value: h.pesewas,
+      title: `${hourLabel(h.hour)}: ${money(h.pesewas)}`,
+    })),
+    orders: hourSlice.map((h) => ({
+      key: String(h.hour),
+      label: hourLabel(h.hour),
+      value: h.orders,
+      title: `${hourLabel(h.hour)}: ${plural(h.orders, "order")}`,
+    })),
+  };
   const chartLabels = [
     firstHour,
     Math.round((firstHour + lastHour + 1) / 2),
     lastHour + 1,
   ].map((hour) => hourLabel(hour % 24));
-
-  // Whole cedis: this is a sense of size, and it has to fit a narrow column.
-  const average = summary.orders ? Math.round(summary.pesewas / summary.orders / 100) * 100 : 0;
 
   const query = (next: { date?: string; branch?: string | null }) => {
     const search = new URLSearchParams();
@@ -185,36 +224,61 @@ export default async function TodayPage({ searchParams }: PageProps) {
       {isToday && <AutoRefresh seconds={60} />}
 
       <div>
-        <div className="flex items-center justify-between gap-2">
-          <h1 className="text-3xl font-bold tracking-tight truncate">{dayTitle(date, today)}</h1>
-          <div className="flex items-center gap-1 shrink-0">
+        <h1 className="text-3xl font-bold tracking-tight truncate">{dayTitle(date, today)}</h1>
+        <div className="flex items-center gap-1 mt-3">
+          <Link
+            href={query({ date: shiftDay(date, -1) })}
+            prefetch={false}
+            scroll={false}
+            data-press
+            aria-label="Previous day"
+            className="flex items-center justify-center border rounded-md size-9 shrink-0 hover:bg-accent"
+          >
+            <ChevronLeft className="size-5" aria-hidden />
+          </Link>
+          <DatePicker
+            value={date}
+            max={today}
+            defaultValue={today}
+            label={getDayBoundsUtc(date)[0].toLocaleDateString("en-GH", {
+              timeZone: "UTC",
+              weekday: "short",
+              day: "numeric",
+              month: "short",
+              year: "numeric",
+            })}
+            className="flex-1 justify-center"
+          />
+          {isToday ? (
+            <span
+              aria-hidden
+              className="flex items-center justify-center border rounded-md size-9 shrink-0 text-muted-foreground/30"
+            >
+              <ChevronRight className="size-5" />
+            </span>
+          ) : (
             <Link
-              href={query({ date: shiftDay(date, -1) })}
+              href={query({ date: shiftDay(date, 1) })}
               prefetch={false}
               scroll={false}
               data-press
-              aria-label="Previous day"
-              className="flex items-center justify-center rounded-md size-9 hover:bg-accent"
+              aria-label="Next day"
+              className="flex items-center justify-center border rounded-md size-9 shrink-0 hover:bg-accent"
             >
-              <ChevronLeft className="size-5" aria-hidden />
+              <ChevronRight className="size-5" aria-hidden />
             </Link>
-            {isToday ? (
-              <span aria-hidden className="size-9 text-muted-foreground/30 flex items-center justify-center">
-                <ChevronRight className="size-5" />
-              </span>
-            ) : (
-              <Link
-                href={query({ date: shiftDay(date, 1) })}
-                prefetch={false}
-                scroll={false}
-                data-press
-                aria-label="Next day"
-                className="flex items-center justify-center rounded-md size-9 hover:bg-accent"
-              >
-                <ChevronRight className="size-5" aria-hidden />
-              </Link>
-            )}
-          </div>
+          )}
+          {!isToday && (
+            <Link
+              href={query({ date: today })}
+              prefetch={false}
+              scroll={false}
+              data-press
+              className="flex items-center h-9 px-3 text-sm font-medium rounded-md shrink-0 text-background bg-foreground"
+            >
+              Today
+            </Link>
+          )}
         </div>
 
         <Segments
@@ -275,10 +339,38 @@ export default async function TodayPage({ searchParams }: PageProps) {
       <StatStrip
         stats={[
           { label: "Paid orders", value: summary.orders },
-          { label: "Average", value: money(average) },
+          { label: "Completed", value: summary.statuses.completed },
+          { label: "Still open", value: summary.statuses.open },
+          { label: "Shawarmas", value: summary.shawarma.qty },
+          { label: "Drinks", value: summary.drinks.qty },
           { label: "Cups used", value: summary.cups },
+          { label: "Average", value: money(average) },
+          { label: "Items on menu", value: menu.activeProducts },
+          { label: "Sold out", value: menu.soldOut.length },
         ]}
       />
+
+      {/* This month against last, the comparison he checks most */}
+      <Section title="This month against last" note="Same number of days">
+        <div className="grid grid-cols-2 gap-3">
+          <div className="p-3 border border-dashed rounded-md">
+            <p className="text-xl font-bold tracking-tight font-display tabular-nums">{money(monthPace.now.pesewas)}</p>
+            <p className="text-xs text-muted-foreground">
+              Money, was {money(monthPace.before.pesewas)}{" "}
+              <Change now={monthPace.now.pesewas} before={monthPace.before.pesewas} />
+            </p>
+          </div>
+          <div className="p-3 border border-dashed rounded-md">
+            <p className="text-xl font-bold tracking-tight font-display tabular-nums">
+              {monthPace.now.orders.toLocaleString("en-GH")}
+            </p>
+            <p className="text-xs text-muted-foreground">
+              Orders, was {monthPace.before.orders.toLocaleString("en-GH")}{" "}
+              <Change now={monthPace.now.orders} before={monthPace.before.orders} />
+            </p>
+          </div>
+        </div>
+      </Section>
 
       {(attention.unpaidToday > 0 || attention.staleOpen > 0 || soldOut.length > 0) && (
         <nav aria-label="Needs a look" className="flex gap-2 -mx-4 px-4 overflow-x-auto sm:mx-0 sm:px-0 [scrollbar-width:none]">
@@ -305,6 +397,44 @@ export default async function TodayPage({ searchParams }: PageProps) {
       )}
 
       <div className="grid gap-8 md:grid-cols-2 md:gap-x-12">
+        <Section
+          title="Shawarma"
+          note={summary.shawarma.qty > 0 ? `${summary.shawarma.qty} sold, ${money(summary.shawarma.pesewas)}` : undefined}
+        >
+          {summary.shawarma.qty === 0 ? (
+            <Empty>No shawarma sold yet.</Empty>
+          ) : (
+            <div className="flex flex-col gap-4">
+              <div className="flex flex-wrap gap-2" aria-label="By size">
+                {summary.shawarma.sizes.map((row) => (
+                  <span key={row.size} className="px-3 py-1.5 text-sm rounded-md bg-secondary">
+                    {row.size} <strong className="ml-1 tabular-nums">{row.qty}</strong>
+                  </span>
+                ))}
+              </div>
+              <RankBars
+                rows={summary.shawarma.items.map((item) => ({
+                  key: `${item.name}${item.size}`,
+                  label: item.name,
+                  detail: item.size ?? undefined,
+                  value: item.qty,
+                  display: `${item.qty}, ${money(item.pesewas)}`,
+                  image: productImages[item.name],
+                }))}
+              />
+            </div>
+          )}
+        </Section>
+
+        <Section title="Drinks and food">
+          <SplitBar
+            parts={[
+              { key: "drinks", label: "Drinks", value: summary.drinks.pesewas, amount: money(summary.drinks.pesewas) },
+              { key: "shawarma", label: "Shawarma", value: summary.shawarma.pesewas, amount: money(summary.shawarma.pesewas) },
+            ]}
+          />
+        </Section>
+
         <Section title="Cash up">
           <SplitBar
             parts={
@@ -370,6 +500,53 @@ export default async function TodayPage({ searchParams }: PageProps) {
           )}
         </Section>
       </div>
+
+      <div className="grid gap-8 md:grid-cols-2 md:gap-x-12">
+        <Section title="Money by the hour">
+          <Bars bars={hourBars.money} labelEvery={2} />
+        </Section>
+        <Section title="Orders by the hour">
+          <Bars bars={hourBars.orders} labelEvery={2} />
+        </Section>
+        <Section title="Order status">
+          <SplitBar
+            parts={[
+              { key: "completed", label: "Completed", value: summary.statuses.completed, amount: String(summary.statuses.completed) },
+              { key: "open", label: "Still open", value: summary.statuses.open, amount: String(summary.statuses.open) },
+              { key: "unpaid", label: "Not paid", value: summary.statuses.unpaid, amount: String(summary.statuses.unpaid) },
+              { key: "cancelled", label: "Cancelled", value: summary.statuses.cancelled, amount: String(summary.statuses.cancelled) },
+            ]}
+          />
+        </Section>
+        <Section title="Month by month" note="Against the month before">
+          <MonthBars rows={monthRows} />
+          <Link
+            href={`/admin/analytics?view=compare${branch ? `&branch=${branch.slug}` : ""}`}
+            prefetch={false}
+            className="inline-block mt-3 text-sm font-medium underline underline-offset-4 text-primary"
+          >
+            Compare any two months or days
+          </Link>
+        </Section>
+      </div>
+
+      {orders.length > 0 && (
+        <Section title="Latest orders">
+          <ul className="border-t border-dashed">
+            {orders.slice(0, 10).map((order) => (
+              <li key={order.id} className="flex items-baseline gap-3 py-2 text-sm border-b border-dashed">
+                <span className="text-xs text-muted-foreground tabular-nums shrink-0">{clock(order.created_at)}</span>
+                <span className="flex-1 min-w-0 truncate">
+                  {order.items
+                    .map((item) => (item.quantity > 1 ? `${item.quantity} ${item.product_name}` : item.product_name))
+                    .join(", ")}
+                </span>
+                <span className="font-semibold tabular-nums shrink-0">{money(order.total_pesewas)}</span>
+              </li>
+            ))}
+          </ul>
+        </Section>
+      )}
 
       <Link
         href={`/admin/orders?${dayQuery}${branchQuery}`}

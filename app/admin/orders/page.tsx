@@ -1,8 +1,9 @@
 import Link from "next/link";
 
+import DatePicker from "@/components/admin/date-picker";
 import { Empty, PageHeader, Segments } from "@/components/admin/ledger";
 import { requireAdmin } from "@/lib/admin/auth";
-import { money, plural } from "@/lib/admin/format";
+import { money, plural, shortDay } from "@/lib/admin/format";
 import { fetchOrders, getBranches } from "@/lib/admin/queries";
 import { getDayBoundsUtc, ghanaToday } from "@/lib/range-metrics";
 import OrdersList from "./orders-list";
@@ -23,6 +24,8 @@ type PageProps = {
     date?: string;
     branch?: string;
     show?: string;
+    pay?: string;
+    source?: string;
     limit?: string;
   }>;
 };
@@ -52,7 +55,15 @@ export default async function OrdersPage({ searchParams }: PageProps) {
       : search
         ? "all"
         : "today";
-  const show = params.show === "open" || params.show === "unpaid" ? params.show : "all";
+  const show =
+    params.show === "open" ||
+    params.show === "unpaid" ||
+    params.show === "completed" ||
+    params.show === "cancelled"
+      ? params.show
+      : "all";
+  const payment = params.pay === "cash" || params.pay === "momo" || params.pay === "hubtel" ? params.pay : null;
+  const source = params.source === "instore" || params.source === "online" ? params.source : null;
   const limit = Math.min(MAX_LIMIT, Math.max(PAGE_SIZE, Number(params.limit) || PAGE_SIZE));
 
   const branches = await getBranches();
@@ -64,11 +75,20 @@ export default async function OrdersPage({ searchParams }: PageProps) {
     to,
     branchId: branch?.id ?? null,
     show,
+    payment,
+    source,
     search,
     limit,
   });
 
-  const href = (next: { day?: string | null; branch?: string | null; show?: string | null; limit?: number }) => {
+  const href = (next: {
+    day?: string | null;
+    branch?: string | null;
+    show?: string | null;
+    pay?: string | null;
+    source?: string | null;
+    limit?: number;
+  }) => {
     const query = new URLSearchParams();
     if (search) query.set("q", search);
     const nextDay = next.day === undefined ? (day === "date" ? null : day) : next.day;
@@ -78,6 +98,10 @@ export default async function OrdersPage({ searchParams }: PageProps) {
     if (nextBranch) query.set("branch", nextBranch);
     const nextShow = next.show === undefined ? show : next.show;
     if (nextShow && nextShow !== "all") query.set("show", nextShow);
+    const nextPay = next.pay === undefined ? payment : next.pay;
+    if (nextPay) query.set("pay", nextPay);
+    const nextSource = next.source === undefined ? source : next.source;
+    if (nextSource) query.set("source", nextSource);
     if (next.limit) query.set("limit", String(next.limit));
     const text = query.toString();
     return text ? `/admin/orders?${text}` : "/admin/orders";
@@ -92,32 +116,52 @@ export default async function OrdersPage({ searchParams }: PageProps) {
       <PageHeader title="Orders">
         {plural(total, "order")}
         {total <= orders.length && shownMoney > 0 && `, ${money(shownMoney)} paid`}
-        {day === "date" && dateKey && ` on ${dateKey}`}
+        {day === "date" && dateKey && ` on ${shortDay(`${dateKey}T00:00:00Z`)}`}
       </PageHeader>
 
       <div className="flex flex-col gap-2 mb-4">
         <OrdersSearch initial={search} />
-        <Segments
-          label="Which days"
-          options={[
-            { label: "Today", href: href({ day: "today" }), active: day === "today" },
-            { label: "Yesterday", href: href({ day: "yesterday" }), active: day === "yesterday" },
-            { label: "7 days", href: href({ day: "week" }), active: day === "week" },
-            { label: "All", href: href({ day: "all" }), active: day === "all" },
-          ]}
-        />
+        <div className="flex items-center gap-2">
+          <Segments
+            label="Which days"
+            className="flex-1 min-w-0"
+            options={[
+              { label: "Today", href: href({ day: "today" }), active: day === "today" },
+              { label: "Yesterday", href: href({ day: "yesterday" }), active: day === "yesterday" },
+              { label: "7 days", href: href({ day: "week" }), active: day === "week" },
+              { label: "All", href: href({ day: "all" }), active: day === "all" },
+            ]}
+          />
+          <DatePicker
+            value={dateKey ?? ""}
+            max={ghanaToday()}
+            label={dateKey ? shortDay(`${dateKey}T00:00:00Z`) : "Date"}
+          />
+        </div>
         <Segments
           label="Which orders"
           options={[
             { label: "Every order", href: href({ show: null }), active: show === "all" },
             { label: "Still open", href: href({ show: "open" }), active: show === "open" },
             { label: "Not paid", href: href({ show: "unpaid" }), active: show === "unpaid" },
+            { label: "Completed", href: href({ show: "completed" }), active: show === "completed" },
+            { label: "Cancelled", href: href({ show: "cancelled" }), active: show === "cancelled" },
             ...branches.map((b, index) => ({
               label: b.name.replace(" Branch", ""),
               href: href({ branch: branch?.id === b.id ? null : b.slug }),
               active: branch?.id === b.id,
               breakBefore: index === 0,
             })),
+          ]}
+        />
+        <Segments
+          label="Payment and source"
+          options={[
+            { label: "Cash", href: href({ pay: payment === "cash" ? null : "cash" }), active: payment === "cash" },
+            { label: "MoMo", href: href({ pay: payment === "momo" ? null : "momo" }), active: payment === "momo" },
+            { label: "Hubtel", href: href({ pay: payment === "hubtel" ? null : "hubtel" }), active: payment === "hubtel" },
+            { label: "In store", href: href({ source: source === "instore" ? null : "instore" }), active: source === "instore", breakBefore: true },
+            { label: "Online", href: href({ source: source === "online" ? null : "online" }), active: source === "online" },
           ]}
         />
       </div>
