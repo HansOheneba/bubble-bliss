@@ -15,6 +15,7 @@ import { requireAdmin } from "@/lib/admin/auth";
 import { clock, hourLabel, money, paymentName, plural } from "@/lib/admin/format";
 import {
   fetchAttention,
+  fetchDayByHour,
   fetchPeriod,
   fetchSoldOut,
   fetchTotals,
@@ -91,33 +92,34 @@ export default async function TodayPage({ searchParams }: PageProps) {
   const lastWeek = await findComparisonDay(date, branchId);
   const lastWeekName = comparisonName(lastWeek, date);
   const [lastWeekStart, lastWeekEnd] = getDayBoundsUtc(lastWeek);
-  // Tonight so far is compared with the same point in the evening a week ago.
-  const compareEnd = isToday
-    ? sameTimeLastWeek(lastWeekStart, dayStart)
-    : lastWeekEnd;
-
-  const [orders, lastWeekOrders, lastWeekSoFar, attention, soldOut] = await Promise.all([
+  const [orders, compareRows, attention, soldOut] = await Promise.all([
     fetchPeriod(dayStart, dayEnd, branchId),
-    fetchPeriod(lastWeekStart, lastWeekEnd, branchId),
-    fetchTotals(lastWeekStart, compareEnd, branchId),
+    fetchDayByHour(lastWeekStart, lastWeekEnd, branchId),
     fetchAttention(dayStart, dayEnd, branchId),
     isToday ? fetchSoldOut() : Promise.resolve<string[]>([]),
   ]);
+  const summary = await summarize(orders, branches);
 
-  const [summary, lastWeekSummary] = await Promise.all([
-    summarize(orders, branches),
-    summarize(lastWeekOrders, branches),
-  ]);
+  // Tonight so far is compared with the same point in the evening that day.
+  const compareEnd = isToday ? sameTimeLastWeek(lastWeekStart, dayStart) : lastWeekEnd;
+  const compareSoFar = compareRows
+    .filter((row) => new Date(row.at) < compareEnd)
+    .reduce((sum, row) => sum + row.pesewas, 0);
+  const compareHours = Array.from({ length: 24 }, () => 0);
+  for (const row of compareRows) compareHours[new Date(row.at).getUTCHours()] += row.pesewas;
 
-  const difference = summary.pesewas - lastWeekSoFar.pesewas;
-  const hoursWithSales = [...summary.hours, ...lastWeekSummary.hours].filter((h) => h.orders > 0);
-  const firstHour = Math.min(14, ...hoursWithSales.map((h) => h.hour));
-  const lastHour = Math.max(22, ...hoursWithSales.map((h) => h.hour));
+  const difference = summary.pesewas - compareSoFar;
+  const busyHours = [
+    ...summary.hours.filter((h) => h.orders > 0).map((h) => h.hour),
+    ...compareHours.flatMap((value, hour) => (value > 0 ? [hour] : [])),
+  ];
+  const firstHour = Math.min(14, ...busyHours);
+  const lastHour = Math.max(22, ...busyHours);
   const bars = summary.hours.slice(firstHour, lastHour + 1).map((h) => ({
     key: String(h.hour),
     label: hourLabel(h.hour),
     value: h.pesewas,
-    ghost: lastWeekSummary.hours[h.hour].pesewas,
+    ghost: compareHours[h.hour],
     title: `${hourLabel(h.hour)}: ${money(h.pesewas)}, ${plural(h.orders, "order")}`,
   }));
 
@@ -196,7 +198,7 @@ export default async function TodayPage({ searchParams }: PageProps) {
           ) : (
             <>
               {plural(summary.orders, "paid order")}.{" "}
-              {lastWeekSoFar.pesewas > 0 && (
+              {compareSoFar > 0 && (
                 <span className={cn("font-medium", difference >= 0 ? "text-good" : "text-attention")}>
                   {money(Math.abs(difference))} {difference >= 0 ? "ahead of" : "behind"}{" "}
                   {lastWeekName}
