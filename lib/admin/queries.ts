@@ -143,6 +143,35 @@ export async function fetchTotals(
   };
 }
 
+type HourRow = TotalRow & { created_at: string | null };
+
+/** Everything the comparison day needs, without loading a single item. */
+export async function fetchDayByHour(
+  from: Date,
+  to: Date,
+  branchId: number | null,
+): Promise<{ at: string; pesewas: number }[]> {
+  const db = createAdminClient();
+  const rows = await fetchAllPages<HourRow>((rangeFrom, rangeTo) => {
+    let query = db
+      .from("orders")
+      .select("created_at, total_pesewas, status, payment_status")
+      .eq("payment_status", "paid")
+      .gte("created_at", from.toISOString())
+      .lt("created_at", to.toISOString())
+      .order("id", { ascending: false })
+      .range(rangeFrom, rangeTo);
+    if (branchId !== null) query = query.eq("branch_id", branchId);
+    return query as unknown as PromiseLike<{
+      data: HourRow[] | null;
+      error: { message: string } | null;
+    }>;
+  });
+  return rows
+    .filter(isRevenueCountable)
+    .flatMap((o) => (o.created_at ? [{ at: o.created_at, pesewas: o.total_pesewas }] : []));
+}
+
 // ── Turning orders into the numbers on screen ─────────────────────────────────
 
 function add(map: Map<string, Row>, key: string, label: string, pesewas: number) {

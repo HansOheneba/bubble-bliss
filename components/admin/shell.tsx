@@ -69,7 +69,7 @@ function Logo({ size }: { size: number }) {
         width={size}
         height={Math.round(size * 0.6)}
         priority
-        className="block dark:hidden"
+        className="block mix-blend-multiply dark:hidden"
       />
       <Image
         src="/bbl-white.png"
