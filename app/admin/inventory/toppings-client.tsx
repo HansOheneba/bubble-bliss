@@ -1,8 +1,11 @@
 "use client";
 
+import { Empty, PageHeader } from "@/components/admin/ledger";
+import MenuRow from "@/components/admin/menu-row";
+import { MenuTabs } from "@/components/admin/tabs";
+
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -23,7 +26,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Search, Plus, Pencil, Trash2 } from "lucide-react";
+import { Search, Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   createTopping,
@@ -424,159 +427,77 @@ export default function ToppingsClient({ initialToppings, branches }: Props) {
     return toppings.filter((t) => t.name.toLowerCase().includes(q));
   }, [toppings, query]);
 
-  const activeCount = toppings.filter((t) => t.is_active).length;
   const inStockCount = toppings.filter((t) => t.in_stock).length;
 
   return (
     <>
-      <div className="space-y-8">
-        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-          <div>
-            <h1 className="text-2xl font-semibold tracking-tight">Toppings</h1>
-            <p className="text-sm text-muted-foreground">
-              {activeCount} active, {inStockCount} in stock out of{" "}
-              {toppings.length} total.
-            </p>
-          </div>
-          <div className="flex gap-3">
-            <div className="relative w-full md:w-64">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="Search toppings..."
-                className="pl-9"
-              />
-            </div>
+      <div>
+        <PageHeader
+          title="Menu"
+          action={
             <Button
               onClick={() => {
                 setEditingTopping(null);
                 setSheetOpen(true);
               }}
-              className="gap-2 shrink-0"
+              className="gap-2"
             >
-              <Plus className="h-4 w-4" />
+              <Plus className="size-4" aria-hidden />
               Add topping
             </Button>
-          </div>
+          }
+        />
+        <MenuTabs active="toppings" />
+
+        <div className="relative mb-4">
+          <Search className="absolute -translate-y-1/2 pointer-events-none size-4 left-3 top-1/2 text-muted-foreground" aria-hidden />
+          <Input
+            type="search"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Find a topping"
+            aria-label="Find a topping"
+            className="pl-9 h-11"
+          />
         </div>
-
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {filtered.map((topping) => (
-            <div
-              key={topping.id}
-              className={cn(
-                "rounded-xl border bg-card p-4 flex flex-col gap-3 transition-opacity",
-                !topping.is_active && "opacity-60",
-              )}
-            >
-              <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0">
-                  <div className="font-semibold text-sm truncate">
-                    {topping.name}
-                  </div>
-                  <div className="text-xs text-muted-foreground mt-0.5">
-                    {formatMoney(topping.price_in_pesewas)}
-                  </div>
-                </div>
-                <div className="flex items-center gap-1 shrink-0">
-                  {topping.is_active ? (
-                    <Badge
-                      variant="outline"
-                      className="text-xs border-green-500/30 text-green-700 dark:text-green-400"
-                    >
-                      Active
-                    </Badge>
-                  ) : (
-                    <Badge
-                      variant="outline"
-                      className="text-xs border-red-500/30 text-red-700 dark:text-red-400"
-                    >
-                      Inactive
-                    </Badge>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setEditingTopping(topping);
-                      setSheetOpen(true);
-                    }}
-                    className="p-1 rounded text-muted-foreground hover:text-foreground transition-colors"
-                    aria-label="Edit topping"
-                  >
-                    <Pencil className="h-3.5 w-3.5" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setDeleteError(null);
-                      setDeleteTarget(topping);
-                    }}
-                    className="p-1 rounded text-muted-foreground hover:text-destructive transition-colors"
-                    aria-label="Delete topping"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </button>
-                </div>
-              </div>
-
-              {/* Branch availability */}
-              {branches.length > 0 && (
-                <div className="flex flex-wrap gap-1">
-                  {(topping.branch_availability?.length ?? 0) === 0 ? (
-                    <Badge
-                      variant="outline"
-                      className="text-xs text-muted-foreground"
-                    >
-                      All branches
-                    </Badge>
-                  ) : (
-                    topping.branch_availability.map((ba) => {
-                      const b = branches.find((br) => br.id === ba.branch_id);
-                      return (
-                        <Badge
-                          key={ba.branch_id}
-                          variant="secondary"
-                          className="text-xs"
-                        >
-                          {b?.name ?? `Branch ${ba.branch_id}`}
-                        </Badge>
-                      );
-                    })
-                  )}
-                </div>
-              )}
-
-              <div className="flex flex-col gap-2 pt-2 border-t">
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-muted-foreground">Active</span>
-                  <Toggle
-                    checked={topping.is_active ?? false}
-                    onChange={() => toggleActive(topping)}
-                    disabled={updating[topping.id]}
-                    label="Toggle active"
-                  />
-                </div>
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-muted-foreground">In stock</span>
-                  <Toggle
-                    checked={topping.in_stock ?? false}
-                    onChange={() => toggleStock(topping)}
-                    disabled={updating[topping.id]}
-                    label="Toggle stock"
-                  />
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
+        <p className="pb-1 text-sm border-b border-dashed text-muted-foreground">
+          {inStockCount} of {toppings.length} in stock. The first topping on a drink is free.
+        </p>
+        <ul>
+          {filtered.map((topping) => {
+            const onlyAt = (topping.branch_availability ?? [])
+              .map((a) => branches.find((b) => b.id === a.branch_id)?.name.replace(" Branch", ""))
+              .filter(Boolean)
+              .join(", ");
+            return (
+              <MenuRow
+                key={topping.id}
+                name={topping.name}
+                detail={
+                  onlyAt
+                    ? `${formatMoney(topping.price_in_pesewas)}. ${onlyAt} only`
+                    : formatMoney(topping.price_in_pesewas)
+                }
+                inStock={topping.in_stock ?? false}
+                onTill={topping.is_active ?? false}
+                busy={updating[topping.id] ?? false}
+                onToggleStock={() => toggleStock(topping)}
+                onToggleTill={() => toggleActive(topping)}
+                onEdit={() => {
+                  setEditingTopping(topping);
+                  setSheetOpen(true);
+                }}
+                onDelete={() => {
+                  setDeleteError(null);
+                  setDeleteTarget(topping);
+                }}
+              />
+            );
+          })}
+        </ul>
 
         {filtered.length === 0 && (
-          <div className="py-16 text-center text-muted-foreground">
-            {query
-              ? "No toppings match your search."
-              : "No toppings yet. Add one to get started."}
-          </div>
+          <Empty>{query ? "No toppings match that." : "No toppings yet. Add the first one."}</Empty>
         )}
       </div>
 

@@ -1,5 +1,8 @@
 "use client";
 
+import { Empty, PageHeader } from "@/components/admin/ledger";
+import { MenuTabs } from "@/components/admin/tabs";
+
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
@@ -22,8 +25,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Badge } from "@/components/ui/badge";
-import { Plus, Pencil, Trash2 } from "lucide-react";
+import { Plus, Trash2 } from "lucide-react";
 import { createCategory, updateCategory, deleteCategory } from "@/lib/actions";
 import type { Category } from "@/lib/database.types";
 import type { CategoryInput } from "@/lib/actions";
@@ -260,105 +262,61 @@ export default function CategoriesClient({
 
   return (
     <>
-      <div className="space-y-6">
-        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-          <div>
-            <h1 className="text-2xl font-semibold tracking-tight">
-              Categories
-            </h1>
-            <p className="text-sm text-muted-foreground">
-              {categories.length}{" "}
-              {categories.length === 1 ? "category" : "categories"} total
-            </p>
-          </div>
-          <Button
-            onClick={() => {
-              setEditingCategory(null);
-              setSheetOpen(true);
-            }}
-            className="gap-2"
-          >
-            <Plus className="h-4 w-4" />
-            Add category
-          </Button>
-        </div>
+      <div>
+        <PageHeader
+          title="Menu"
+          action={
+            <Button
+              onClick={() => {
+                setEditingCategory(null);
+                setSheetOpen(true);
+              }}
+              className="gap-2"
+            >
+              <Plus className="size-4" aria-hidden />
+              Add category
+            </Button>
+          }
+        />
+        <MenuTabs active="categories" />
 
-        <div className="rounded-xl border overflow-hidden">
-          {categories.length === 0 ? (
-            <div className="py-16 text-center text-muted-foreground">
-              No categories yet. Add one to get started.
-            </div>
-          ) : (
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b bg-muted/40">
-                  <th className="px-4 py-3 text-left font-medium text-muted-foreground">
-                    Name
-                  </th>
-                  <th className="px-4 py-3 text-left font-medium text-muted-foreground">
-                    Slug
-                  </th>
-                  <th className="px-4 py-3 text-left font-medium text-muted-foreground">
-                    Products
-                  </th>
-                  <th className="px-4 py-3 text-left font-medium text-muted-foreground">
-                    Order
-                  </th>
-                  <th className="px-4 py-3 text-right font-medium text-muted-foreground">
-                    Actions
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {categories.map((cat, idx) => (
-                  <tr
-                    key={cat.id}
-                    className={idx % 2 === 0 ? "bg-card" : "bg-muted/20"}
+        {categories.length === 0 ? (
+          <Empty>No categories yet. Add the first one.</Empty>
+        ) : (
+          <ul className="border-t border-dashed">
+            {categories.map((cat) => {
+              const count = productCounts[cat.id] ?? 0;
+              return (
+                <li key={cat.id} className="flex items-center gap-2 py-2 border-b border-dashed">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditingCategory(cat);
+                      setSheetOpen(true);
+                    }}
+                    className="flex-1 min-w-0 text-left active:!scale-[0.99]"
                   >
-                    <td className="px-4 py-3 font-medium">{cat.name}</td>
-                    <td className="px-4 py-3 text-muted-foreground font-mono text-xs">
-                      {cat.slug}
-                    </td>
-                    <td className="px-4 py-3">
-                      <Badge variant="secondary" className="text-xs">
-                        {productCounts[cat.id] ?? 0} products
-                      </Badge>
-                    </td>
-                    <td className="px-4 py-3 text-muted-foreground">
-                      {cat.sort_order ?? 0}
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex justify-end gap-2">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setEditingCategory(cat);
-                            setSheetOpen(true);
-                          }}
-                          className="p-1.5 rounded text-muted-foreground hover:text-foreground transition-colors"
-                          aria-label="Edit category"
-                        >
-                          <Pencil className="h-4 w-4" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setDeleteError(null);
-                            setDeleteTarget(cat);
-                          }}
-                          className="p-1.5 rounded text-muted-foreground hover:text-destructive transition-colors"
-                          aria-label="Delete category"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </div>
+                    <span className="block text-sm font-medium truncate">{cat.name}</span>
+                    <span className="block text-xs text-muted-foreground">
+                      {count} {count === 1 ? "item" : "items"}, position {cat.sort_order ?? 0} on the till
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDeleteError(null);
+                      setDeleteTarget(cat);
+                    }}
+                    className="flex items-center justify-center rounded-md size-9 text-muted-foreground hover:bg-accent hover:text-destructive"
+                    aria-label={`Delete ${cat.name}`}
+                  >
+                    <Trash2 className="size-4" aria-hidden />
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        )}
       </div>
 
       <CategoryFormSheet

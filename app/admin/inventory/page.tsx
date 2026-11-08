@@ -1,9 +1,12 @@
+import { requireAdmin } from "@/lib/admin/auth";
 import { createAdminClient } from "@/lib/supabase";
 import type {
   ToppingWithBranchAvailability,
   Branch,
 } from "@/lib/database.types";
 import ToppingsClient from "./toppings-client";
+
+export const metadata = { title: "Toppings" };
 
 async function fetchPageData() {
   const supabase = createAdminClient();
@@ -22,6 +25,7 @@ async function fetchPageData() {
 }
 
 export default async function InventoryPage() {
+  await requireAdmin();
   const { toppings, branches } = await fetchPageData();
   return <ToppingsClient initialToppings={toppings} branches={branches} />;
 }

@@ -1,6 +1,9 @@
+import { requireAdmin } from "@/lib/admin/auth";
 import { createAdminClient } from "@/lib/supabase";
 import type { Category } from "@/lib/database.types";
 import CategoriesClient from "./categories-client";
+
+export const metadata = { title: "Categories" };
 
 async function fetchPageData() {
   const supabase = createAdminClient();
@@ -32,6 +35,7 @@ async function fetchPageData() {
 }
 
 export default async function CategoriesPage() {
+  await requireAdmin();
   const { categories, countByCat } = await fetchPageData();
   return (
     <CategoriesClient initialCategories={categories} countByCat={countByCat} />

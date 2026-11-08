@@ -1,5 +1,8 @@
 "use client";
 
+import { PageHeader } from "@/components/admin/ledger";
+import { TeamTabs } from "@/components/admin/tabs";
+
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
@@ -29,7 +32,6 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Badge } from "@/components/ui/badge";
 import { Plus, Pencil, UserX } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { Teller, Branch } from "@/lib/database.types";
@@ -154,41 +156,44 @@ export default function TellersClient({ initialTellers, branches }: Props) {
   const inactive = tellers.filter((t) => !t.is_active);
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold">Tellers</h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            Manage staff accounts and branch assignments.
-          </p>
-        </div>
-        <Button onClick={openCreate} size="sm" className="gap-2">
-          <Plus className="w-4 h-4" />
-          Add Teller
-        </Button>
+    <div className="space-y-4">
+      <div>
+        <PageHeader
+          title="Team"
+          action={
+            <Button onClick={openCreate} className="gap-2">
+              <Plus className="size-4" aria-hidden />
+              Add cashier
+            </Button>
+          }
+        />
+        <TeamTabs active="cashiers" />
+        <p className="text-sm text-muted-foreground">
+          The names staff pick on the tablet. Each sale is recorded against one.
+        </p>
       </div>
 
       {/* Active tellers */}
       <div className="space-y-3">
         {active.length === 0 && (
-          <p className="text-sm text-muted-foreground py-8 text-center border rounded-lg">
-            No tellers yet. Add one to get started.
+          <p className="text-sm text-muted-foreground py-8 text-center">
+            No cashiers yet. Add the first one.
           </p>
         )}
         {active.map((t) => (
           <div
             key={t.id}
-            className="flex items-center justify-between p-4 border rounded-lg bg-card"
+            className="flex items-center justify-between py-3 border-b border-dashed"
           >
             <div className="space-y-0.5">
               <p className="font-medium text-sm">{t.name}</p>
               <p className="text-xs text-muted-foreground">{t.email}</p>
-              <Badge variant="outline" className="text-xs mt-1">
+              <p className="text-xs text-muted-foreground">
                 {t.branch?.name ?? "Unknown branch"}
-              </Badge>
+              </p>
             </div>
             <div className="flex gap-2">
-              <Button variant="ghost" size="icon" onClick={() => openEdit(t)}>
+              <Button variant="ghost" size="icon" onClick={() => openEdit(t)} aria-label={`Edit ${t.name}`}>
                 <Pencil className="w-4 h-4" />
               </Button>
               <Button
@@ -196,6 +201,7 @@ export default function TellersClient({ initialTellers, branches }: Props) {
                 size="icon"
                 className="text-destructive hover:text-destructive"
                 onClick={() => setDeactivateTarget(t)}
+                aria-label={`Remove ${t.name}`}
               >
                 <UserX className="w-4 h-4" />
               </Button>
@@ -207,22 +213,22 @@ export default function TellersClient({ initialTellers, branches }: Props) {
       {/* Inactive tellers */}
       {inactive.length > 0 && (
         <div className="space-y-2">
-          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-            Inactive
+          <p className="pt-4 text-sm font-semibold font-display">
+            No longer here
           </p>
           {inactive.map((t) => (
             <div
               key={t.id}
               className={cn(
-                "flex items-center justify-between p-4 border rounded-lg bg-card opacity-60",
+                "flex items-center justify-between py-3 border-b border-dashed opacity-60",
               )}
             >
               <div className="space-y-0.5">
                 <p className="font-medium text-sm">{t.name}</p>
                 <p className="text-xs text-muted-foreground">{t.email}</p>
-                <Badge variant="secondary" className="text-xs mt-1">
+                <p className="text-xs text-muted-foreground">
                   {t.branch?.name ?? "Unknown branch"}
-                </Badge>
+                </p>
               </div>
               <Button
                 variant="outline"
@@ -243,7 +249,7 @@ export default function TellersClient({ initialTellers, branches }: Props) {
           className="w-full sm:max-w-md overflow-y-auto"
         >
           <SheetHeader>
-            <SheetTitle>{editing ? "Edit Teller" : "New Teller"}</SheetTitle>
+            <SheetTitle>{editing ? "Edit cashier" : "New Teller"}</SheetTitle>
             <SheetDescription>
               {editing
                 ? "Update this teller&apos;s details."
@@ -322,7 +328,7 @@ export default function TellersClient({ initialTellers, branches }: Props) {
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Deactivate teller?</AlertDialogTitle>
+            <AlertDialogTitle>Remove cashier?</AlertDialogTitle>
             <AlertDialogDescription>
               {deactivateTarget?.name} will no longer be able to be assigned to
               orders. You can reactivate them later.

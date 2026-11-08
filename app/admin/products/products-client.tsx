@@ -1,9 +1,12 @@
 "use client";
 
+import { Empty, PageHeader, Segments } from "@/components/admin/ledger";
+import MenuRow from "@/components/admin/menu-row";
+import { MenuTabs } from "@/components/admin/tabs";
+
 import * as React from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -35,8 +38,6 @@ import {
 import {
   Search,
   Plus,
-  Pencil,
-  Trash2,
   PlusCircle,
   XCircle,
   Upload,
@@ -95,7 +96,7 @@ type FormValues = {
 // ── Utilities ─────────────────────────────────────────────────────────────────
 
 function formatMoney(pesewas: number | null) {
-  if (pesewas === null) return "—";
+  if (pesewas === null) return "No price";
   return new Intl.NumberFormat("en-GH", {
     style: "currency",
     currency: "GHS",
@@ -245,34 +246,6 @@ function Toggle({
 }
 
 // ── Branch availability chips ─────────────────────────────────────────────────
-
-function BranchChips({
-  branchIds,
-  branches,
-}: {
-  branchIds: number[];
-  branches: Branch[];
-}) {
-  if (branchIds.length === 0) {
-    return (
-      <Badge variant="outline" className="text-xs text-muted-foreground">
-        All branches
-      </Badge>
-    );
-  }
-  return (
-    <>
-      {branchIds.map((bid) => {
-        const b = branches.find((br) => br.id === bid);
-        return (
-          <Badge key={bid} variant="secondary" className="text-xs">
-            {b?.name ?? `Branch ${bid}`}
-          </Badge>
-        );
-      })}
-    </>
-  );
-}
 
 // ── Product Form Sheet ────────────────────────────────────────────────────────
 
@@ -799,7 +772,8 @@ export default function ProductsClient({
   initialProducts,
   branches,
   categories,
-}: Props) {
+  onlySoldOut,
+}: Props & { onlySoldOut: boolean }) {
   const router = useRouter();
   const [products, setProducts] =
     React.useState<ProductWithVariants[]>(initialProducts);
@@ -858,13 +832,31 @@ export default function ProductsClient({
 
   const filtered = React.useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return products;
     return products.filter(
       (p) =>
-        p.name.toLowerCase().includes(q) ||
-        (p.category?.name ?? "").toLowerCase().includes(q),
+        (!onlySoldOut || !p.in_stock) &&
+        (!q ||
+          p.name.toLowerCase().includes(q) ||
+          (p.category?.name ?? "").toLowerCase().includes(q)),
     );
-  }, [products, query]);
+  }, [products, query, onlySoldOut]);
+
+  const soldOutCount = products.filter((p) => !p.in_stock).length;
+
+  function priceLine(product: ProductWithVariants) {
+    const price =
+      product.variants && product.variants.length > 0
+        ? [...product.variants]
+            .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
+            .map((v) => `${v.label} ${formatMoney(v.price_in_pesewas)}`)
+            .join(", ")
+        : formatMoney(product.price_in_pesewas);
+    const onlyAt = (product.branch_availability ?? [])
+      .map((a) => branches.find((b) => b.id === a.branch_id)?.name.replace(" Branch", ""))
+      .filter(Boolean)
+      .join(", ");
+    return onlyAt ? `${price}. ${onlyAt} only` : price;
+  }
 
   // Group by category
   const grouped = React.useMemo(() => {
@@ -879,179 +871,84 @@ export default function ProductsClient({
 
   return (
     <>
-      <div className="space-y-8">
-        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-          <div>
-            <h1 className="text-2xl font-semibold tracking-tight">Products</h1>
-            <p className="text-sm text-muted-foreground">
-              {products.length} products across {grouped.size}{" "}
-              {grouped.size === 1 ? "category" : "categories"}
-            </p>
-          </div>
-          <div className="flex gap-3">
-            <div className="relative w-full md:w-64">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="Search products..."
-                className="pl-9"
-              />
-            </div>
+      <div>
+        <PageHeader
+          title="Menu"
+          action={
             <Button
               onClick={() => {
                 setEditingProduct(null);
                 setSheetOpen(true);
               }}
-              className="gap-2 shrink-0"
+              className="gap-2"
             >
-              <Plus className="h-4 w-4" />
-              Add product
+              <Plus className="size-4" aria-hidden />
+              Add item
             </Button>
-          </div>
+          }
+        />
+        <MenuTabs active="items" />
+
+        <div className="relative mb-2">
+          <Search className="absolute -translate-y-1/2 pointer-events-none size-4 left-3 top-1/2 text-muted-foreground" aria-hidden />
+          <Input
+            type="search"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Find an item"
+            aria-label="Find an item"
+            className="pl-9 h-11"
+          />
         </div>
+        <Segments
+          label="Show"
+          className="mb-4"
+          options={[
+            { label: `All ${products.length}`, href: "/admin/products", active: !onlySoldOut },
+            { label: `Sold out ${soldOutCount}`, href: "/admin/products?stock=out", active: onlySoldOut },
+          ]}
+        />
 
         {Array.from(grouped.entries()).map(([category, items]) => (
-          <div key={category} className="space-y-3">
-            <div className="flex items-center gap-3">
-              <h2 className="text-base font-semibold text-foreground">
-                {category}
-              </h2>
-              <div className="h-px flex-1 bg-border" />
-              <span className="text-xs text-muted-foreground">
-                {items.length} items
-              </span>
-            </div>
-
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          <section key={category} className="mb-6">
+            <h2 className="pb-1 text-lg font-semibold tracking-tight border-b border-dashed">
+              {category}
+            </h2>
+            <ul>
               {items.map((product) => (
-                <div
+                <MenuRow
                   key={product.id}
-                  className={cn(
-                    "rounded-xl border bg-card overflow-hidden flex flex-col transition-opacity",
-                    !product.is_active && "opacity-60",
-                  )}
-                >
-                  {product.image ? (
-                    <div className="relative h-36 w-full bg-muted">
-                      <Image
-                        src={product.image}
-                        alt={product.name}
-                        fill
-                        className="object-cover"
-                        sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 25vw"
-                      />
-                    </div>
-                  ) : (
-                    <div className="h-36 w-full bg-muted flex items-center justify-center text-muted-foreground text-xs">
-                      No image
-                    </div>
-                  )}
-
-                  <div className="p-3 flex flex-col gap-2.5 flex-1">
-                    <div className="flex items-start justify-between gap-1">
-                      <div className="min-w-0">
-                        <div className="font-semibold text-sm leading-snug truncate">
-                          {product.name}
-                        </div>
-                        {product.description && (
-                          <div className="text-xs text-muted-foreground mt-0.5 line-clamp-1">
-                            {product.description}
-                          </div>
-                        )}
-                      </div>
-                      <div className="flex gap-1 shrink-0">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setEditingProduct(product);
-                            setSheetOpen(true);
-                          }}
-                          className="p-1 rounded text-muted-foreground hover:text-foreground transition-colors"
-                          aria-label="Edit product"
-                        >
-                          <Pencil className="h-3.5 w-3.5" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setDeleteError(null);
-                            setDeleteTarget(product);
-                          }}
-                          className="p-1 rounded text-muted-foreground hover:text-destructive transition-colors"
-                          aria-label="Delete product"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
-                      </div>
-                    </div>
-
-                    <div className="flex flex-wrap gap-1">
-                      {product.variants && product.variants.length > 0 ? (
-                        product.variants
-                          .sort(
-                            (a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0),
-                          )
-                          .map((v) => (
-                            <Badge
-                              key={v.id}
-                              variant="outline"
-                              className="text-xs"
-                            >
-                              {v.label}: {formatMoney(v.price_in_pesewas)}
-                            </Badge>
-                          ))
-                      ) : (
-                        <Badge variant="outline" className="text-xs">
-                          {formatMoney(product.price_in_pesewas)}
-                        </Badge>
-                      )}
-                    </div>
-
-                    {branches.length > 0 && (
-                      <div className="flex flex-wrap gap-1">
-                        <BranchChips
-                          branchIds={(product.branch_availability ?? []).map(
-                            (ba) => ba.branch_id,
-                          )}
-                          branches={branches}
-                        />
-                      </div>
-                    )}
-
-                    <div className="flex flex-col gap-2 mt-auto pt-2 border-t">
-                      <div className="flex items-center justify-between text-sm">
-                        <span className="text-muted-foreground">Active</span>
-                        <Toggle
-                          checked={product.is_active ?? false}
-                          onChange={() => toggleActive(product)}
-                          disabled={updating[product.id]}
-                          label="Toggle active"
-                        />
-                      </div>
-                      <div className="flex items-center justify-between text-sm">
-                        <span className="text-muted-foreground">In stock</span>
-                        <Toggle
-                          checked={product.in_stock ?? false}
-                          onChange={() => toggleStock(product)}
-                          disabled={updating[product.id]}
-                          label="Toggle stock"
-                        />
-                      </div>
-                    </div>
-                  </div>
-                </div>
+                  name={product.name}
+                  detail={priceLine(product)}
+                  image={product.image}
+                  showImage
+                  inStock={product.in_stock ?? false}
+                  onTill={product.is_active ?? false}
+                  busy={updating[product.id] ?? false}
+                  onToggleStock={() => toggleStock(product)}
+                  onToggleTill={() => toggleActive(product)}
+                  onEdit={() => {
+                    setEditingProduct(product);
+                    setSheetOpen(true);
+                  }}
+                  onDelete={() => {
+                    setDeleteError(null);
+                    setDeleteTarget(product);
+                  }}
+                />
               ))}
-            </div>
-          </div>
+            </ul>
+          </section>
         ))}
 
         {filtered.length === 0 && (
-          <div className="py-16 text-center text-muted-foreground">
-            {query
-              ? "No products match your search."
-              : "No products yet. Add one to get started."}
-          </div>
+          <Empty>
+            {onlySoldOut && !query
+              ? "Nothing is sold out."
+              : query
+                ? "No items match that."
+                : "No items yet. Add the first one."}
+          </Empty>
         )}
       </div>
 
