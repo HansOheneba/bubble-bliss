@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { useSearchParams, useRouter, usePathname } from "next/navigation";
+import { useSearchParams, usePathname } from "next/navigation";
 import {
   Table,
   TableBody,
@@ -107,7 +107,6 @@ const ALL_CATEGORIES = ["product", "topping", "category", "teller", "pos_user"];
 
 export default function LogsClient({ logs }: Props) {
   const searchParams = useSearchParams();
-  const router = useRouter();
   const pathname = usePathname();
 
   function syncToUrl(updates: Record<string, string | null>) {
@@ -119,7 +118,9 @@ export default function LogsClient({ logs }: Props) {
         params.set(key, value);
       }
     }
-    router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+    // Filters are applied in the browser. Update the URL without re-running the
+    // server page, which would reload every order on each click and keystroke.
+    window.history.replaceState(null, "", `${pathname}?${params.toString()}`);
   }
 
   const [query, setQuery] = React.useState(searchParams.get("q") ?? "");

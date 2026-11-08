@@ -32,6 +32,7 @@ export default function Breadcrumbs() {
           ) : (
             <Link
               href={segment.href}
+              prefetch={false}
               className="text-muted-foreground hover:text-foreground transition-colors"
             >
               {segment.label}

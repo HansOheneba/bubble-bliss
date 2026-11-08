@@ -8,6 +8,7 @@ import type {
   OrderItem,
   OrderItemTopping,
 } from "@/lib/database.types";
+import type { OrderItemWithToppings } from "@/lib/order-metrics";
 import {
   countCupsInOrder,
   isRevenueCountable,
@@ -18,11 +19,38 @@ import AnalyticsClient from "./analytics-client";
 
 type TellerWithBranch = Teller & { branch: Branch | null };
 
-type FullOrder = Order & {
-  branch: Branch | null;
-  teller: Teller | null;
-  items: (OrderItem & { toppings: OrderItemTopping[] })[];
+// Only the columns this page reads. Typed narrowly so that using anything else
+// is a compile error rather than a silently wrong number.
+type AnalyticsItem = Pick<
+  OrderItem,
+  "product_id" | "product_name" | "variant_label" | "quantity" | "unit_pesewas"
+> & {
+  toppings: Pick<OrderItemTopping, "topping_name" | "price_applied_pesewas">[];
 };
+
+type AnalyticsOrder = Pick<
+  Order,
+  | "id"
+  | "created_at"
+  | "total_pesewas"
+  | "status"
+  | "payment_method"
+  | "payment_status"
+  | "phone"
+  | "customer_name"
+  | "order_source"
+  | "teller_id"
+> & {
+  branch: Pick<Branch, "name"> | null;
+  items: AnalyticsItem[];
+};
+
+const ANALYTICS_SELECT =
+  "id, created_at, total_pesewas, status, payment_method, payment_status, phone, customer_name, order_source, teller_id, branch:branches(name), items:order_items(product_id, product_name, variant_label, quantity, unit_pesewas, toppings:order_item_toppings(topping_name, price_applied_pesewas))";
+
+// itemRevenueGhs reads only unit_pesewas, quantity and the toppings' applied prices.
+const itemRevenue = (item: AnalyticsItem) =>
+  itemRevenueGhs(item as unknown as OrderItemWithToppings);
 
 export type SlimOrder = {
   id: number;
@@ -97,15 +125,13 @@ async function fetchAnalyticsData() {
   const db = createAdminClient();
 
   const [rawOrders, shawarmaProductIds] = await Promise.all([
-    fetchAllPages<FullOrder>((from, to) =>
+    fetchAllPages<AnalyticsOrder>((from, to) =>
       db
         .from("orders")
-        .select(
-          "*, branch:branches(*), teller:tellers(*), items:order_items(*, toppings:order_item_toppings(*))",
-        )
+        .select(ANALYTICS_SELECT)
         .order("created_at", { ascending: false })
         .range(from, to) as unknown as PromiseLike<{
-        data: FullOrder[] | null;
+        data: AnalyticsOrder[] | null;
         error: { message: string } | null;
       }>,
     ),
@@ -152,7 +178,7 @@ async function fetchAnalyticsData() {
           productName: item.product_name,
           variantLabel: item.variant_label ?? "Regular",
           qty: item.quantity,
-          revenueGhs: itemRevenueGhs(item),
+          revenueGhs: itemRevenue(item),
         });
       }
     }
@@ -182,7 +208,7 @@ async function fetchAnalyticsData() {
         revenueGhs: 0,
       };
       cur.qty += item.quantity;
-      cur.revenueGhs += itemRevenueGhs(item);
+      cur.revenueGhs += itemRevenue(item);
       productMap.set(item.product_name, cur);
     }
   }
@@ -331,7 +357,7 @@ async function fetchAnalyticsData() {
         revenueGhs: 0,
       };
       cur.qty += item.quantity;
-      cur.revenueGhs += itemRevenueGhs(item);
+      cur.revenueGhs += itemRevenue(item);
       acc.productMap.set(item.product_name, cur);
 
       for (const t of item.toppings) {

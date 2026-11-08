@@ -404,7 +404,7 @@ export default function DashboardClient({
             }}
           />
           <Button asChild variant="outline" size="sm">
-            <Link href="/admin/analytics">View Analytics</Link>
+            <Link href="/admin/analytics" prefetch={false}>View Analytics</Link>
           </Button>
         </div>
       </div>
@@ -766,7 +766,7 @@ export default function DashboardClient({
             </div>
           </div>
           <Button asChild variant="outline" size="sm">
-            <Link href="/admin/orders">See all</Link>
+            <Link href="/admin/orders" prefetch={false}>See all</Link>
           </Button>
         </div>
         <div className="overflow-x-auto">

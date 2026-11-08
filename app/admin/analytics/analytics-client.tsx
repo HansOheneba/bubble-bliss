@@ -46,7 +46,7 @@ import {
   formatDateKey,
   sparseTickLabel,
 } from "@/lib/range-metrics";
-import { useSearchParams, useRouter, usePathname } from "next/navigation";
+import { useSearchParams, usePathname } from "next/navigation";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 import type {
@@ -365,7 +365,6 @@ export default function AnalyticsClient({
   branchSourceStats,
 }: Props) {
   const searchParams = useSearchParams();
-  const router = useRouter();
   const pathname = usePathname();
 
   function syncToUrl(updates: Record<string, string | null>) {
@@ -377,7 +376,9 @@ export default function AnalyticsClient({
         params.set(key, value);
       }
     }
-    router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+    // Filters are applied in the browser. Update the URL without re-running the
+    // server page, which would reload every order on each click and keystroke.
+    window.history.replaceState(null, "", `${pathname}?${params.toString()}`);
   }
 
   const [selectedDate, setSelectedDate] = React.useState<string>(
@@ -578,7 +579,6 @@ export default function AnalyticsClient({
   // ── Compare computed ──────────────────────────────────────────────────────
   const dayOptions = Array.from({ length: 7 }, (_, i) => {
     const now = new Date();
-    const pad2 = (n: number) => n.toString().padStart(2, "0");
     const d = new Date(
       Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - i),
     );
