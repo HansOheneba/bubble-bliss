@@ -143,8 +143,22 @@ async function buildSalesView(period: PeriodKey, branchId: number | null, branch
   }
   const topCustomers = [...customers.entries()]
     .sort(([, a], [, b]) => b.pesewas - a.pesewas)
-    .slice(0, 5)
+    .slice(0, 20)
     .map(([phone, customer]) => ({ phone, ...customer }));
+  const mostFrequent = [...customers.entries()]
+    .sort(([, a], [, b]) => b.orders - a.orders)
+    .slice(0, 1)
+    .map(([phone, customer]) => ({ phone, ...customer }))[0] ?? null;
+  const orderBars = series.map(([key, value]) => ({
+    key,
+    label: useMonths
+      ? new Date(`${key}-01T00:00:00Z`).toLocaleDateString("en-GH", { timeZone: "UTC", month: "short" })
+      : series.length <= 7
+        ? new Date(`${key}T00:00:00Z`).toLocaleDateString("en-GH", { timeZone: "UTC", weekday: "short" })
+        : shortDay(`${key}T00:00:00Z`),
+    value: value.orders,
+    title: `${key}: ${plural(value.orders, "order")}`,
+  }));
 
   return {
     summary,
@@ -156,6 +170,8 @@ async function buildSalesView(period: PeriodKey, branchId: number | null, branch
     customerCount: customers.size,
     returning: [...customers.values()].filter((c) => c.orders > 1).length,
     topCustomers,
+    mostFrequent,
+    orderBars,
     moneyDelta: previous ? change(summary.pesewas, previous.pesewas) : "",
     isUp: previous ? summary.pesewas >= previous.pesewas : true,
     average: summary.orders ? Math.round(summary.pesewas / summary.orders) : 0,
@@ -170,3 +186,57 @@ async function buildSalesView(period: PeriodKey, branchId: number | null, branch
 export const getSalesView = unstable_cache(buildSalesView, ["admin-sales-view"], {
   revalidate: 60,
 });
+
+// ── Comparing any two days or months ──────────────────────────────────────────
+
+export type CompareMode = "days" | "months";
+
+export function compareChoices(mode: CompareMode): { value: string; label: string }[] {
+  const now = new Date();
+  if (mode === "months") {
+    return Array.from({ length: 12 }, (_, i) => {
+      const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - i, 1));
+      return {
+        value: d.toISOString().slice(0, 7),
+        label: d.toLocaleDateString("en-GH", { timeZone: "UTC", month: "long", year: "numeric" }),
+      };
+    });
+  }
+  return Array.from({ length: 31 }, (_, i) => {
+    const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - i));
+    const name = d.toLocaleDateString("en-GH", { timeZone: "UTC", weekday: "short", day: "numeric", month: "short" });
+    return {
+      value: d.toISOString().slice(0, 10),
+      label: i === 0 ? `Today, ${name}` : i === 1 ? `Yesterday, ${name}` : name,
+    };
+  });
+}
+
+function compareBounds(mode: CompareMode, key: string): [Date, Date] {
+  if (mode === "months") {
+    const [year, month] = key.split("-").map(Number);
+    return [new Date(Date.UTC(year, month - 1, 1)), new Date(Date.UTC(year, month, 1))];
+  }
+  return getDayBoundsUtc(key);
+}
+
+async function buildCompare(
+  mode: CompareMode,
+  a: string,
+  b: string,
+  branchId: number | null,
+  branches: BranchOption[],
+) {
+  const [rangeA, rangeB] = [compareBounds(mode, a), compareBounds(mode, b)];
+  const [ordersA, ordersB] = await Promise.all([
+    fetchPeriod(rangeA[0], rangeA[1], branchId),
+    fetchPeriod(rangeB[0], rangeB[1], branchId),
+  ]);
+  const [summaryA, summaryB] = await Promise.all([
+    summarize(ordersA, branches),
+    summarize(ordersB, branches),
+  ]);
+  return { a: summaryA, b: summaryB };
+}
+
+export const getCompare = unstable_cache(buildCompare, ["admin-compare"], { revalidate: 60 });

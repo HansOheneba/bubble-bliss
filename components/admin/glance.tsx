@@ -108,10 +108,10 @@ export function PaceChart({
 /** The counts he checks most, nothing else. */
 export function StatStrip({ stats }: { stats: { label: string; value: ReactNode }[] }) {
   return (
-    <dl className="grid grid-cols-2 border-t border-l border-dashed sm:grid-cols-4">
+    <dl className="grid grid-cols-3 border-t border-l border-dashed">
       {stats.map((stat) => (
-        <div key={stat.label} className="px-3 py-3 border-b border-r border-dashed">
-          <dd className="text-2xl font-bold tracking-tight font-display tabular-nums">{stat.value}</dd>
+        <div key={stat.label} className="px-3 py-2.5 border-b border-r border-dashed">
+          <dd className="text-xl font-bold tracking-tight font-display tabular-nums">{stat.value}</dd>
           <dt className="text-xs text-muted-foreground">{stat.label}</dt>
         </div>
       ))}
@@ -236,5 +236,58 @@ export function AlertChip({
       <span className="text-sm font-bold tabular-nums">{count}</span>
       <span className="text-sm whitespace-nowrap">{label}</span>
     </Link>
+  );
+}
+
+/** "+12%" against the row before, coloured so it reads at a glance. */
+export function Change({ now, before }: { now: number; before: number | null }) {
+  if (before === null) return <span className="text-xs text-muted-foreground">First month</span>;
+  if (now === 0 && before === 0) return <span className="text-xs text-muted-foreground">No sales</span>;
+  const percent = before === 0 ? 100 : Math.round(((now - before) / before) * 100);
+  if (percent === 0) return <span className="text-xs text-muted-foreground">No change</span>;
+  return (
+    <span className={cn("text-xs font-semibold tabular-nums", percent > 0 ? "text-good" : "text-attention")}>
+      {percent > 0 ? "+" : ""}
+      {percent}%
+    </span>
+  );
+}
+
+/** Months as bars, each with its orders, money, and change on the month before. */
+export function MonthBars({
+  rows,
+}: {
+  rows: {
+    key: string;
+    label: string;
+    orders: number;
+    pesewas: number;
+    money: string;
+    previous: { orders: number; pesewas: number } | null;
+  }[];
+}) {
+  const max = Math.max(1, ...rows.map((row) => row.pesewas));
+  return (
+    <ul className="flex flex-col gap-3">
+      {rows.map((row) => (
+        <li key={row.key}>
+          <div className="flex items-baseline justify-between gap-3 text-sm">
+            <span className="font-medium truncate">{row.label}</span>
+            <span className="font-semibold shrink-0 tabular-nums">{row.money}</span>
+          </div>
+          <div className="h-1.5 mt-1 overflow-hidden rounded-full bg-muted">
+            <div className="h-full rounded-full bg-primary" style={{ width: `${Math.max(2, (row.pesewas / max) * 100)}%` }} />
+          </div>
+          <div className="flex items-baseline justify-between gap-3 mt-1 text-xs text-muted-foreground">
+            <span className="tabular-nums">
+              {row.orders.toLocaleString("en-GH")} orders <Change now={row.orders} before={row.previous?.orders ?? null} />
+            </span>
+            <span>
+              Money <Change now={row.pesewas} before={row.previous?.pesewas ?? null} />
+            </span>
+          </div>
+        </li>
+      ))}
+    </ul>
   );
 }
