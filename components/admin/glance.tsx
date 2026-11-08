@@ -264,6 +264,8 @@ export function MonthBars({
     pesewas: number;
     money: string;
     previous: { orders: number; pesewas: number } | null;
+    /** The month still running: a percentage against a full month would mislead. */
+    partial?: boolean;
   }[];
 }) {
   const max = Math.max(1, ...rows.map((row) => row.pesewas));
@@ -272,7 +274,10 @@ export function MonthBars({
       {rows.map((row) => (
         <li key={row.key}>
           <div className="flex items-baseline justify-between gap-3 text-sm">
-            <span className="font-medium truncate">{row.label}</span>
+            <span className="font-medium truncate">
+              {row.label}
+              {row.partial && <span className="ml-1 text-xs font-normal text-muted-foreground">so far</span>}
+            </span>
             <span className="font-semibold shrink-0 tabular-nums">{row.money}</span>
           </div>
           <div className="h-1.5 mt-1 overflow-hidden rounded-full bg-muted">
@@ -280,11 +285,14 @@ export function MonthBars({
           </div>
           <div className="flex items-baseline justify-between gap-3 mt-1 text-xs text-muted-foreground">
             <span className="tabular-nums">
-              {row.orders.toLocaleString("en-GH")} orders <Change now={row.orders} before={row.previous?.orders ?? null} />
+              {row.orders.toLocaleString("en-GH")} orders{" "}
+              {!row.partial && <Change now={row.orders} before={row.previous?.orders ?? null} />}
             </span>
-            <span>
-              Money <Change now={row.pesewas} before={row.previous?.pesewas ?? null} />
-            </span>
+            {!row.partial && (
+              <span>
+                Money <Change now={row.pesewas} before={row.previous?.pesewas ?? null} />
+              </span>
+            )}
           </div>
         </li>
       ))}
