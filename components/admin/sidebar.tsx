@@ -13,6 +13,7 @@ import {
   SidebarMenuItem,
   SidebarMenuButton,
   SidebarSeparator,
+  useSidebar,
 } from "@/components/ui/sidebar";
 
 import {
@@ -43,6 +44,9 @@ const nav = [
 
 export default function AdminSidebar() {
   const pathname = usePathname();
+  const { setOpenMobile } = useSidebar();
+  // On phones the sidebar covers the page, so close it as soon as a link is tapped.
+  const closeOnPhone = () => setOpenMobile(false);
 
   return (
     <Sidebar collapsible="icon" variant="sidebar">
@@ -50,7 +54,9 @@ export default function AdminSidebar() {
         <Link
           href="/admin"
           prefetch={false}
-          className="flex items-center gap-3 rounded-md py-2">
+          onClick={closeOnPhone}
+          className="flex items-center gap-3 rounded-md py-2"
+        >
           <div className="flex items-center justify-center w-full py-1">
             <Image
               src="/bbl-black.png"
@@ -91,6 +97,7 @@ export default function AdminSidebar() {
                   <Link
                     href={item.href}
                     prefetch={false}
+                    onClick={closeOnPhone}
                     className="flex items-center gap-2"
                   >
                     <item.icon />
@@ -112,7 +119,9 @@ export default function AdminSidebar() {
               <Link
                 href="/admin/support"
                 prefetch={false}
-                className="flex items-center gap-2">
+                onClick={closeOnPhone}
+                className="flex items-center gap-2"
+              >
                 <LifeBuoy />
                 <span>Support</span>
               </Link>
