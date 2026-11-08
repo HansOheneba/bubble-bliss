@@ -3,6 +3,8 @@ import { Suspense } from "react";
 import { createAdminClient } from "@/lib/supabase";
 import LogsClient from "./logs-client";
 
+export const metadata = { title: "Activity" };
+
 type AdminLog = {
   id: number;
   admin_email: string;

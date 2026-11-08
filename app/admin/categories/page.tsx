@@ -3,6 +3,8 @@ import { createAdminClient } from "@/lib/supabase";
 import type { Category } from "@/lib/database.types";
 import CategoriesClient from "./categories-client";
 
+export const metadata = { title: "Categories" };
+
 async function fetchPageData() {
   const supabase = createAdminClient();
   const [categoriesResult, productsResult] = await Promise.all([

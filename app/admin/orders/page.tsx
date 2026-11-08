@@ -112,10 +112,11 @@ export default async function OrdersPage({ searchParams }: PageProps) {
             { label: "Every order", href: href({ show: null }), active: show === "all" },
             { label: "Still open", href: href({ show: "open" }), active: show === "open" },
             { label: "Not paid", href: href({ show: "unpaid" }), active: show === "unpaid" },
-            ...branches.map((b) => ({
+            ...branches.map((b, index) => ({
               label: b.name.replace(" Branch", ""),
               href: href({ branch: branch?.id === b.id ? null : b.slug }),
               active: branch?.id === b.id,
+              breakBefore: index === 0,
             })),
           ]}
         />
@@ -130,7 +131,7 @@ export default async function OrdersPage({ searchParams }: PageProps) {
               : "None. Everything is tidy here."}
         </Empty>
       ) : (
-        <OrdersList orders={orders} groupByDay={day !== "today" && day !== "yesterday" && day !== "date"} />
+        <OrdersList orders={orders} today={ghanaToday()} groupByDay={day !== "today" && day !== "yesterday" && day !== "date"} />
       )}
 
       {orders.length < total && limit < MAX_LIMIT && (

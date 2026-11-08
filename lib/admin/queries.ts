@@ -195,14 +195,15 @@ export async function summarize(
         order.total_pesewas,
       );
     }
-    if (order.teller_id !== null) {
-      add(
-        tellers,
-        String(order.teller_id),
-        tellerNames[String(order.teller_id)] ?? "Former cashier",
-        order.total_pesewas,
-      );
-    }
+    // Every paid order gets a row, so this list always adds up to the total.
+    add(
+      tellers,
+      String(order.teller_id ?? "none"),
+      order.teller_id === null
+        ? "No cashier recorded"
+        : (tellerNames[String(order.teller_id)] ?? "Former cashier"),
+      order.total_pesewas,
+    );
     if (order.created_at) {
       const bucket = hours[new Date(order.created_at).getUTCHours()];
       bucket.pesewas += order.total_pesewas;

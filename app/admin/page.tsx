@@ -56,9 +56,23 @@ function sameTimeLastWeek(lastWeekStart: Date, dayStart: Date): Date {
   return new Date(lastWeekStart.getTime() + (Date.now() - dayStart.getTime()));
 }
 
-function weekdayName(dateKey: string): string {
-  const [start] = getDayBoundsUtc(dateKey);
-  return start.toLocaleDateString("en-GH", { timeZone: "UTC", weekday: "long" });
+/** The most recent same weekday that actually traded. Closed days make a useless comparison. */
+async function findComparisonDay(dateKey: string, branchId: number | null): Promise<string> {
+  for (let weeks = 1; weeks <= 4; weeks++) {
+    const candidate = shiftDay(dateKey, -7 * weeks);
+    const [start, end] = getDayBoundsUtc(candidate);
+    const totals = await fetchTotals(start, end, branchId);
+    if (totals.pesewas > 0) return candidate;
+  }
+  return shiftDay(dateKey, -7);
+}
+
+function comparisonName(compareDay: string, dateKey: string): string {
+  const [start] = getDayBoundsUtc(compareDay);
+  const weekday = start.toLocaleDateString("en-GH", { timeZone: "UTC", weekday: "long" });
+  if (compareDay === shiftDay(dateKey, -7)) return `last ${weekday}`;
+  const day = start.toLocaleDateString("en-GH", { timeZone: "UTC", day: "numeric", month: "short" });
+  return `${weekday} ${day}`;
 }
 
 export default async function TodayPage({ searchParams }: PageProps) {
@@ -74,7 +88,8 @@ export default async function TodayPage({ searchParams }: PageProps) {
   const branchId = branch?.id ?? null;
 
   const [dayStart, dayEnd] = getDayBoundsUtc(date);
-  const lastWeek = shiftDay(date, -7);
+  const lastWeek = await findComparisonDay(date, branchId);
+  const lastWeekName = comparisonName(lastWeek, date);
   const [lastWeekStart, lastWeekEnd] = getDayBoundsUtc(lastWeek);
   // Tonight so far is compared with the same point in the evening a week ago.
   const compareEnd = isToday
@@ -184,7 +199,7 @@ export default async function TodayPage({ searchParams }: PageProps) {
               {lastWeekSoFar.pesewas > 0 && (
                 <span className={cn("font-medium", difference >= 0 ? "text-good" : "text-attention")}>
                   {money(Math.abs(difference))} {difference >= 0 ? "ahead of" : "behind"}{" "}
-                  last {weekdayName(lastWeek)}
+                  {lastWeekName}
                   {isToday ? " at this time" : ""}.
                 </span>
               )}
@@ -276,17 +291,20 @@ export default async function TodayPage({ searchParams }: PageProps) {
           )}
         </Section>
 
-        {!branch && summary.branches.length > 0 && (
+        {!branch && branches.length > 1 && (
           <Section title="By branch">
             <Ledger>
-              {summary.branches.map((row) => (
-                <LedgerRow
-                  key={row.key}
-                  label={row.label.replace(" Branch", "")}
-                  detail={plural(row.orders, "order")}
-                  value={money(row.pesewas)}
-                />
-              ))}
+              {branches.map((b) => {
+                const row = summary.branches.find((r) => r.key === String(b.id));
+                return (
+                  <LedgerRow
+                    key={b.id}
+                    label={b.name.replace(" Branch", "")}
+                    detail={row ? plural(row.orders, "order") : "no sales yet"}
+                    value={money(row?.pesewas ?? 0)}
+                  />
+                );
+              })}
             </Ledger>
           </Section>
         )}
@@ -309,7 +327,7 @@ export default async function TodayPage({ searchParams }: PageProps) {
         </Section>
       </div>
 
-      <Section title="Through the evening" note={`Pale bars: last ${weekdayName(lastWeek)}`}>
+      <Section title="Through the evening" note={`Pale bars: ${lastWeekName}`}>
         <Bars bars={bars} labelEvery={2} />
       </Section>
 

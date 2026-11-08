@@ -6,6 +6,8 @@ import type {
 } from "@/lib/database.types";
 import ToppingsClient from "./toppings-client";
 
+export const metadata = { title: "Toppings" };
+
 async function fetchPageData() {
   const supabase = createAdminClient();
   const [toppingsResult, branchesResult] = await Promise.all([

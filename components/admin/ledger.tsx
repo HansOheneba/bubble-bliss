@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Fragment } from "react";
 import type { ReactNode } from "react";
 
 import { cn } from "@/lib/utils";
@@ -92,7 +93,7 @@ export function LedgerRow({
   );
 }
 
-export type SegmentOption = { label: string; href: string; active: boolean };
+export type SegmentOption = { label: string; href: string; active: boolean; breakBefore?: boolean };
 
 /** One-tap filters. They are links, so the URL is shareable and back works. */
 export function Segments({
@@ -110,22 +111,26 @@ export function Segments({
       className={cn("flex gap-1 overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0 [scrollbar-width:none]", className)}
     >
       {options.map((option) => (
-        <Link
-          key={option.href}
-          href={option.href}
-          prefetch={false}
-          scroll={false}
-          data-press
-          aria-current={option.active ? "true" : undefined}
-          className={cn(
-            "shrink-0 px-3 py-1.5 text-sm font-medium whitespace-nowrap rounded-md",
-            option.active
-              ? "text-background bg-foreground"
-              : "text-muted-foreground hover:text-foreground hover:bg-accent",
+        <Fragment key={option.href}>
+          {option.breakBefore && (
+            <span aria-hidden className="mx-1 my-1 border-l border-dashed shrink-0 border-border" />
           )}
-        >
-          {option.label}
-        </Link>
+          <Link
+            href={option.href}
+            prefetch={false}
+            scroll={false}
+            data-press
+            aria-current={option.active ? "true" : undefined}
+            className={cn(
+              "shrink-0 px-3 py-1.5 text-sm font-medium whitespace-nowrap rounded-md",
+              option.active
+                ? "text-background bg-foreground"
+                : "text-muted-foreground hover:text-foreground hover:bg-accent",
+            )}
+          >
+            {option.label}
+          </Link>
+        </Fragment>
       ))}
     </nav>
   );

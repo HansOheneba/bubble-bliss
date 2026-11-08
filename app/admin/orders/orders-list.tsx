@@ -31,12 +31,15 @@ const OPEN = ["pending", "confirmed", "preparing", "ready"];
 type Tone = "good" | "attention" | "muted" | "bad";
 
 /** In plain words, and only loud when something needs a look. */
-function statusOf(order: OrderDetail): { label: string; tone: Tone } {
+function statusOf(order: OrderDetail, today: string): { label: string; tone: Tone } {
   if (order.status === "cancelled") return { label: "Cancelled", tone: "bad" };
   if (order.payment_status === "failed") return { label: "Payment failed", tone: "bad" };
   if (order.payment_status !== "paid") return { label: "Not paid", tone: "attention" };
   if (order.status && OPEN.includes(order.status)) {
-    return { label: "Paid, still open", tone: "attention" };
+    // Tonight this is normal. From an earlier day, someone forgot to close it.
+    return order.created_at?.startsWith(today)
+      ? { label: "In progress", tone: "muted" }
+      : { label: "Never completed", tone: "attention" };
   }
   return { label: "Completed", tone: "muted" };
 }
@@ -67,9 +70,11 @@ type PendingChange =
 
 function OrderSheet({
   order,
+  today,
   onClose,
 }: {
   order: OrderDetail | null;
+  today: string;
   onClose: () => void;
 }) {
   const router = useRouter();
@@ -100,7 +105,7 @@ function OrderSheet({
     });
   }
 
-  const status = order ? statusOf(order) : null;
+  const status = order ? statusOf(order, today) : null;
   const isOpen = order?.status ? OPEN.includes(order.status) : false;
   const isPaid = order?.payment_status === "paid";
   const isCancelled = order?.status === "cancelled";
@@ -258,9 +263,11 @@ function OrderSheet({
 
 export default function OrdersList({
   orders,
+  today,
   groupByDay,
 }: {
   orders: OrderDetail[];
+  today: string;
   groupByDay: boolean;
 }) {
   // The list refreshes after a change, so only the id is kept here.
@@ -271,7 +278,7 @@ export default function OrdersList({
     <>
       <ul className="flex flex-col border-t border-dashed">
         {orders.map((order, index) => {
-          const status = statusOf(order);
+          const status = statusOf(order, today);
           const day = order.created_at?.slice(0, 10) ?? "";
           const showDay =
             groupByDay && (index === 0 || orders[index - 1].created_at?.slice(0, 10) !== day);
@@ -328,7 +335,7 @@ export default function OrdersList({
         })}
       </ul>
 
-      <OrderSheet order={selected} onClose={() => setSelectedId(null)} />
+      <OrderSheet order={selected} today={today} onClose={() => setSelectedId(null)} />
     </>
   );
 }

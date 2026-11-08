@@ -7,6 +7,8 @@ import type {
 } from "@/lib/database.types";
 import ProductsClient from "./products-client";
 
+export const metadata = { title: "Menu" };
+
 async function fetchPageData() {
   const supabase = createAdminClient();
   const [productsResult, branchesResult, categoriesResult] = await Promise.all([
