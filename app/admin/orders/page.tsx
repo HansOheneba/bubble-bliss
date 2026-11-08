@@ -1,8 +1,9 @@
 import Link from "next/link";
 
+import DatePicker from "@/components/admin/date-picker";
 import { Empty, PageHeader, Segments } from "@/components/admin/ledger";
 import { requireAdmin } from "@/lib/admin/auth";
-import { money, plural } from "@/lib/admin/format";
+import { money, plural, shortDay } from "@/lib/admin/format";
 import { fetchOrders, getBranches } from "@/lib/admin/queries";
 import { getDayBoundsUtc, ghanaToday } from "@/lib/range-metrics";
 import OrdersList from "./orders-list";
@@ -92,20 +93,28 @@ export default async function OrdersPage({ searchParams }: PageProps) {
       <PageHeader title="Orders">
         {plural(total, "order")}
         {total <= orders.length && shownMoney > 0 && `, ${money(shownMoney)} paid`}
-        {day === "date" && dateKey && ` on ${dateKey}`}
+        {day === "date" && dateKey && ` on ${shortDay(`${dateKey}T00:00:00Z`)}`}
       </PageHeader>
 
       <div className="flex flex-col gap-2 mb-4">
         <OrdersSearch initial={search} />
-        <Segments
-          label="Which days"
-          options={[
-            { label: "Today", href: href({ day: "today" }), active: day === "today" },
-            { label: "Yesterday", href: href({ day: "yesterday" }), active: day === "yesterday" },
-            { label: "7 days", href: href({ day: "week" }), active: day === "week" },
-            { label: "All", href: href({ day: "all" }), active: day === "all" },
-          ]}
-        />
+        <div className="flex items-center gap-2">
+          <Segments
+            label="Which days"
+            className="flex-1 min-w-0"
+            options={[
+              { label: "Today", href: href({ day: "today" }), active: day === "today" },
+              { label: "Yesterday", href: href({ day: "yesterday" }), active: day === "yesterday" },
+              { label: "7 days", href: href({ day: "week" }), active: day === "week" },
+              { label: "All", href: href({ day: "all" }), active: day === "all" },
+            ]}
+          />
+          <DatePicker
+            value={dateKey ?? ""}
+            max={ghanaToday()}
+            label={dateKey ? shortDay(`${dateKey}T00:00:00Z`) : "Date"}
+          />
+        </div>
         <Segments
           label="Which orders"
           options={[
