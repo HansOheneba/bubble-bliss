@@ -10,6 +10,7 @@ import {
 import Link from "next/link";
 
 import AutoRefresh from "@/components/admin/auto-refresh";
+import DatePicker from "@/components/admin/date-picker";
 import {
   AlertChip,
   PaceChart,
@@ -182,36 +183,61 @@ export default async function TodayPage({ searchParams }: PageProps) {
       {isToday && <AutoRefresh seconds={60} />}
 
       <div>
-        <div className="flex items-center justify-between gap-2">
-          <h1 className="text-3xl font-bold tracking-tight truncate">{dayTitle(date, today)}</h1>
-          <div className="flex items-center gap-1 shrink-0">
+        <h1 className="text-3xl font-bold tracking-tight truncate">{dayTitle(date, today)}</h1>
+        <div className="flex items-center gap-1 mt-3">
+          <Link
+            href={query({ date: shiftDay(date, -1) })}
+            prefetch={false}
+            scroll={false}
+            data-press
+            aria-label="Previous day"
+            className="flex items-center justify-center border rounded-md size-9 shrink-0 hover:bg-accent"
+          >
+            <ChevronLeft className="size-5" aria-hidden />
+          </Link>
+          <DatePicker
+            value={date}
+            max={today}
+            defaultValue={today}
+            label={getDayBoundsUtc(date)[0].toLocaleDateString("en-GH", {
+              timeZone: "UTC",
+              weekday: "short",
+              day: "numeric",
+              month: "short",
+              year: "numeric",
+            })}
+            className="flex-1 justify-center"
+          />
+          {isToday ? (
+            <span
+              aria-hidden
+              className="flex items-center justify-center border rounded-md size-9 shrink-0 text-muted-foreground/30"
+            >
+              <ChevronRight className="size-5" />
+            </span>
+          ) : (
             <Link
-              href={query({ date: shiftDay(date, -1) })}
+              href={query({ date: shiftDay(date, 1) })}
               prefetch={false}
               scroll={false}
               data-press
-              aria-label="Previous day"
-              className="flex items-center justify-center rounded-md size-9 hover:bg-accent"
+              aria-label="Next day"
+              className="flex items-center justify-center border rounded-md size-9 shrink-0 hover:bg-accent"
             >
-              <ChevronLeft className="size-5" aria-hidden />
+              <ChevronRight className="size-5" aria-hidden />
             </Link>
-            {isToday ? (
-              <span aria-hidden className="size-9 text-muted-foreground/30 flex items-center justify-center">
-                <ChevronRight className="size-5" />
-              </span>
-            ) : (
-              <Link
-                href={query({ date: shiftDay(date, 1) })}
-                prefetch={false}
-                scroll={false}
-                data-press
-                aria-label="Next day"
-                className="flex items-center justify-center rounded-md size-9 hover:bg-accent"
-              >
-                <ChevronRight className="size-5" aria-hidden />
-              </Link>
-            )}
-          </div>
+          )}
+          {!isToday && (
+            <Link
+              href={query({ date: today })}
+              prefetch={false}
+              scroll={false}
+              data-press
+              className="flex items-center h-9 px-3 text-sm font-medium rounded-md shrink-0 text-background bg-foreground"
+            >
+              Today
+            </Link>
+          )}
         </div>
 
         <Segments
