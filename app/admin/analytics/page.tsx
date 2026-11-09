@@ -375,7 +375,7 @@ export default async function SalesPage({ searchParams }: PageProps) {
                 <LedgerRow
                   key={row.key}
                   label={row.name}
-                  detail={`${row.isActive ? "" : "Inactive, "}${row.branch ? `${row.branch}, ` : ""}${row.today} today, ${plural(row.orders, "order")} here${row.orders ? `, about ${money(Math.round(row.pesewas / row.orders))} each` : ""}${row.lastAt ? `, last ${shortDay(row.lastAt)} ${clock(row.lastAt)}` : ""}`}
+                  detail={`${row.isActive ? "" : "Inactive, "}${row.branch ? `${row.branch}, ` : ""}${row.today} today, ${plural(row.orders, "order")}${row.orders ? `, about ${money(Math.round(row.pesewas / row.orders))} each` : ""}${row.lastAt ? `, last ${shortDay(row.lastAt)} ${clock(row.lastAt)}` : ""}`}
                   value={money(row.pesewas)}
                 />
               ))}
@@ -468,7 +468,7 @@ export default async function SalesPage({ searchParams }: PageProps) {
                 <LedgerRow
                   key={customer.phone}
                   label={customer.name ?? customer.phone}
-                  detail={`${customer.phone}, ${customer.orders > 1 ? "Returning" : "New"}, ${plural(customer.orders, "order")}, about ${money(Math.round(customer.pesewas / customer.orders))} each${customer.lastAt ? `, last ${shortDay(customer.lastAt)}` : ""}`}
+                  detail={`${customer.name ? `${customer.phone}, ` : ""}${customer.orders > 1 ? "Returning" : "New"}, ${plural(customer.orders, "order")}, about ${money(Math.round(customer.pesewas / customer.orders))} each${customer.lastAt ? `, last ${shortDay(customer.lastAt)}` : ""}`}
                   value={money(customer.pesewas)}
                 />
               ))}

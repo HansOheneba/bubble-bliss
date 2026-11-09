@@ -126,7 +126,7 @@ export async function createProduct(
     }
 
     const productId = (data as { id: number }).id;
-    void logAdminAction({
+    await logAdminAction({
       action: "product.create",
       description: `Created product "${product.name}"`,
       metadata: { id: productId, name: product.name, slug: product.slug },
@@ -208,7 +208,7 @@ export async function updateProduct(
       productChanges.length > 0
         ? `Updated product "${product.name}": ${productChanges.join("; ")}`
         : `Updated product "${product.name}"`;
-    void logAdminAction({
+    await logAdminAction({
       action: "product.update",
       description: productDesc,
       metadata: {
@@ -240,7 +240,7 @@ export async function deleteProduct(id: number): Promise<ActionResult> {
       .single();
     const { error } = await supabase.from("products").delete().eq("id", id);
     if (error) throw new Error(error.message);
-    void logAdminAction({
+    await logAdminAction({
       action: "product.delete",
       description: `Deleted product "${(productRow as { name: string } | null)?.name ?? id}"`,
       metadata: { id },
@@ -264,7 +264,7 @@ export async function toggleProductActive(
       .update({ is_active: value } as never)
       .eq("id", id);
     if (error) throw new Error(error.message);
-    void logAdminAction({
+    await logAdminAction({
       action: "product.toggle_active",
       description: `${value ? "Activated" : "Deactivated"} product "${productName}"`,
       metadata: { id, name: productName, is_active: value },
@@ -287,7 +287,7 @@ export async function toggleProductStock(
       .update({ in_stock: value } as never)
       .eq("id", id);
     if (error) throw new Error(error.message);
-    void logAdminAction({
+    await logAdminAction({
       action: "product.toggle_stock",
       description: `Marked product "${productName}" as ${value ? "in stock" : "out of stock"}`,
       metadata: { id, name: productName, in_stock: value },
@@ -323,7 +323,7 @@ export async function createTopping(
     }
 
     const toppingId = (data as { id: number }).id;
-    void logAdminAction({
+    await logAdminAction({
       action: "topping.create",
       description: `Created topping "${topping.name}"`,
       metadata: { id: toppingId, name: topping.name },
@@ -400,7 +400,7 @@ export async function updateTopping(
       toppingChanges.length > 0
         ? `Updated topping "${topping.name}": ${toppingChanges.join("; ")}`
         : `Updated topping "${topping.name}"`;
-    void logAdminAction({
+    await logAdminAction({
       action: "topping.update",
       description: toppingDesc,
       metadata: { id, name: topping.name, changes: toppingChanges },
@@ -426,7 +426,7 @@ export async function deleteTopping(id: number): Promise<ActionResult> {
       .single();
     const { error } = await supabase.from("toppings").delete().eq("id", id);
     if (error) throw new Error(error.message);
-    void logAdminAction({
+    await logAdminAction({
       action: "topping.delete",
       description: `Deleted topping "${(toppingRow as { name: string } | null)?.name ?? id}"`,
       metadata: { id },
@@ -450,7 +450,7 @@ export async function toggleToppingActive(
       .update({ is_active: value } as never)
       .eq("id", id);
     if (error) throw new Error(error.message);
-    void logAdminAction({
+    await logAdminAction({
       action: "topping.toggle_active",
       description: `${value ? "Activated" : "Deactivated"} topping "${toppingName}"`,
       metadata: { id, name: toppingName, is_active: value },
@@ -473,7 +473,7 @@ export async function toggleToppingStock(
       .update({ in_stock: value } as never)
       .eq("id", id);
     if (error) throw new Error(error.message);
-    void logAdminAction({
+    await logAdminAction({
       action: "topping.toggle_stock",
       description: `Marked topping "${toppingName}" as ${value ? "in stock" : "out of stock"}`,
       metadata: { id, name: toppingName, in_stock: value },
@@ -498,7 +498,7 @@ export async function createCategory(
       .single();
     if (error || !data) throw new Error(error?.message ?? "Insert failed");
     const catId = (data as { id: number }).id;
-    void logAdminAction({
+    await logAdminAction({
       action: "category.create",
       description: `Created category "${category.name}"`,
       metadata: { id: catId, name: category.name, slug: category.slug },
@@ -552,7 +552,7 @@ export async function updateCategory(
       categoryChanges.length > 0
         ? `Updated category "${category.name}": ${categoryChanges.join("; ")}`
         : `Updated category "${category.name}"`;
-    void logAdminAction({
+    await logAdminAction({
       action: "category.update",
       description: categoryDesc,
       metadata: {
@@ -594,7 +594,7 @@ export async function deleteCategory(
       .single();
     const { error } = await supabase.from("categories").delete().eq("id", id);
     if (error) throw new Error(error.message);
-    void logAdminAction({
+    await logAdminAction({
       action: "category.delete",
       description: `Deleted category "${(catRow as { name: string } | null)?.name ?? id}"`,
       metadata: { id },
