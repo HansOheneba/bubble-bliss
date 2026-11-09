@@ -10,9 +10,10 @@ type LogPayload = {
 };
 
 /**
- * Fire-and-forget admin activity logger.
+ * Admin activity logger.
  * Reads the current Clerk session to get the admin email automatically.
- * Never throws — a logging failure will not break the calling operation.
+ * Await it: on Vercel, work still running after a server action returns can be cut off.
+ * Never throws, so a logging failure will not break the calling operation.
  */
 export async function logAdminAction(payload: LogPayload): Promise<void> {
   try {
@@ -23,14 +24,15 @@ export async function logAdminAction(payload: LogPayload): Promise<void> {
         ?.emailAddress?.toLowerCase() ?? "unknown";
 
     const db = createAdminClient();
-    await db.from("admin_logs").insert({
+    const { error } = await db.from("admin_logs").insert({
       admin_email: adminEmail,
       action: payload.action,
       description: payload.description,
       metadata: payload.metadata ?? null,
     } as never);
-  } catch {
-    // Intentionally swallowed — logging must never break the main operation
+    if (error) console.error("Admin log insert failed:", payload.action, error.message);
+  } catch (err) {
+    console.error("Admin log failed:", payload.action, err);
   }
 }
 
