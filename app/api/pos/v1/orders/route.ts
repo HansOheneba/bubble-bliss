@@ -40,6 +40,8 @@ export async function GET(req: NextRequest) {
 // POST /api/pos/v1/orders — place an in-store order.
 // cash: saved as paid immediately (staff has collected the cash).
 // momo: saved unpaid; a Hubtel checkout link is returned for the customer to pay.
+// With paymentStatus ("paid" | "unpaid", v2.1+ tablets) the order is saved with
+// that status as-is and no Hubtel checkout is started.
 export async function POST(req: NextRequest) {
   const auth = await authenticatePos(req);
   if (!auth.ok) return auth.response;
@@ -60,7 +62,7 @@ export async function POST(req: NextRequest) {
     let checkoutUrl: string | null = null;
     let paymentInitError: string | null = null;
 
-    if (input.paymentMethod === "momo") {
+    if (input.paymentMethod === "momo" && !input.paymentStatus) {
       const hubtel = await initiateHubtelCheckout({
         totalAmount: created.totalPesewas / 100,
         clientReference: created.clientReference,

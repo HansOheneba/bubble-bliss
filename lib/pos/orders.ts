@@ -10,6 +10,7 @@ import type { Database } from "@/lib/database.types";
 type Db = SupabaseClient<Database>;
 
 export type PosPaymentMethod = "cash" | "momo";
+export type PosPaymentStatus = "paid" | "unpaid";
 
 export type PosItemInput = {
   productId: number;
@@ -24,6 +25,13 @@ export type PosItemInput = {
 export type PosOrderInput = {
   items: PosItemInput[];
   paymentMethod: PosPaymentMethod;
+  /**
+   * Optional (v2.1+ tablets). When set, the order is saved with exactly this
+   * payment status and no Hubtel checkout is started: the till only records
+   * what happened at the counter. When absent, the v2.0 behaviour applies
+   * (cash = paid, momo = unpaid + Hubtel checkout).
+   */
+  paymentStatus?: PosPaymentStatus | null;
   tellerId: number;
   customerName?: string | null;
   phone?: string | null;
@@ -102,6 +110,9 @@ export function validateOrderInput(body: unknown): PosOrderInput {
   if (b.paymentMethod !== "cash" && b.paymentMethod !== "momo") {
     throw new PosInputError('paymentMethod must be "cash" or "momo"');
   }
+  if (b.paymentStatus != null && b.paymentStatus !== "paid" && b.paymentStatus !== "unpaid") {
+    throw new PosInputError('paymentStatus must be "paid" or "unpaid"');
+  }
   const tellerId = Number(b.tellerId);
   if (!Number.isInteger(tellerId) || tellerId <= 0) {
     throw new PosInputError("Select a cashier before placing the order");
@@ -145,6 +156,7 @@ export function validateOrderInput(body: unknown): PosOrderInput {
   return {
     items,
     paymentMethod: b.paymentMethod,
+    paymentStatus: (b.paymentStatus as PosPaymentStatus | null | undefined) ?? null,
     tellerId,
     customerName: cleanText(b.customerName, 120),
     phone: cleanText(b.phone, 20),
@@ -284,8 +296,13 @@ export async function createPosOrder(
   branchId: number,
   input: PosOrderInput,
 ): Promise<CreatedOrder> {
+  // A phone number never blocks a sale. If it doesn't look like a Ghanaian
+  // number we keep it out of the phone column (used for SMS) and save what was
+  // typed in the order notes instead.
   const { phone, error: phoneError } = parseOptionalPhone(input.phone);
-  if (phoneError) throw new PosInputError(phoneError);
+  const notes = phoneError
+    ? [input.notes, `Phone: ${String(input.phone).trim()}`].filter(Boolean).join(" | ").slice(0, 500)
+    : (input.notes ?? null);
 
   await assertTellerAtBranch(db, input.tellerId, branchId);
   const priced = await priceItems(db, branchId, input.items);
@@ -293,7 +310,9 @@ export async function createPosOrder(
 
   const clientReference = crypto.randomUUID().replace(/-/g, "").slice(0, 32);
   const now = new Date().toISOString();
-  const isCash = input.paymentMethod === "cash";
+  const isPaid = input.paymentStatus
+    ? input.paymentStatus === "paid"
+    : input.paymentMethod === "cash";
 
   const { data: orderData, error: orderError } = await db
     .from("orders")
@@ -301,9 +320,9 @@ export async function createPosOrder(
       phone,
       customer_name: input.customerName ?? null,
       location_text: input.deliveryAddress ?? "In-store",
-      notes: input.notes ?? null,
-      status: isCash ? "confirmed" : "pending",
-      payment_status: isCash ? "paid" : "unpaid",
+      notes,
+      status: isPaid ? "confirmed" : "pending",
+      payment_status: isPaid ? "paid" : "unpaid",
       payment_method: input.paymentMethod,
       total_pesewas: totalPesewas,
       client_reference: clientReference,
