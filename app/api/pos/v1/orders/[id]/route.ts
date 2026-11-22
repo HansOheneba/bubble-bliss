@@ -21,11 +21,14 @@ type OrderState = {
 };
 
 type Action =
-  | { action: "set_status"; status: "preparing" | "ready" | "completed" | "cancelled" }
+  | { action: "set_status"; status: (typeof STATUSES)[number] }
   | { action: "pay_cash" }
-  | { action: "confirm_momo_manually" };
+  | { action: "confirm_momo_manually" }
+  | { action: "mark_unpaid" };
 
-const STATUSES = ["preparing", "ready", "completed", "cancelled"] as const;
+// The till is a back office: staff may move an order to any status, forwards
+// or back, paid or not. "pending"/"confirmed" were added for v2.1 tablets.
+const STATUSES = ["pending", "confirmed", "preparing", "ready", "completed", "cancelled"] as const;
 
 async function loadOwnOrder(id: string, branchId: number) {
   const orderId = Number(id);
@@ -88,12 +91,6 @@ export async function PATCH(req: NextRequest, context: RouteContext) {
     if (!STATUSES.includes(body.status)) {
       return NextResponse.json({ message: "Invalid status" }, { status: 400 });
     }
-    if (body.status !== "cancelled" && order.payment_status !== "paid") {
-      return NextResponse.json(
-        { message: "Take payment before preparing this order." },
-        { status: 409 },
-      );
-    }
     const { error } = await db
       .from("orders")
       .update({ status: body.status, updated_at: now } as never)
@@ -102,11 +99,14 @@ export async function PATCH(req: NextRequest, context: RouteContext) {
       console.error("[pos/v1/orders/:id] status update failed", error);
       return NextResponse.json({ message: "Could not update the order" }, { status: 500 });
     }
-    if (body.status === "cancelled") {
+    if (body.status === "cancelled" || order.status === "cancelled") {
+      const restoring = body.status !== "cancelled";
       await logAdminActionWithEmail(auth.ctx.email, {
-        action: "pos.order.cancel",
-        description: `Cancelled order ${order.order_number ?? order.id} on the POS (${auth.ctx.branch.name})`,
-        metadata: { orderId: order.id, paymentStatus: order.payment_status },
+        action: restoring ? "pos.order.uncancel" : "pos.order.cancel",
+        description: restoring
+          ? `Restored cancelled order ${order.order_number ?? order.id} to ${body.status} on the POS (${auth.ctx.branch.name})`
+          : `Cancelled order ${order.order_number ?? order.id} on the POS (${auth.ctx.branch.name})`,
+        metadata: { orderId: order.id, paymentStatus: order.payment_status, status: body.status },
       });
     }
     return respondWithOrder(db, order.id);
@@ -118,12 +118,15 @@ export async function PATCH(req: NextRequest, context: RouteContext) {
       return NextResponse.json({ message: "This order was cancelled." }, { status: 409 });
     }
     const method = body.action === "pay_cash" ? "cash" : "momo";
+    // Keep an order that is already being made where it is; only a waiting
+    // order moves on to "confirmed" (same as before for v2.0 tablets).
+    const nextStatus = !order.status || order.status === "pending" ? "confirmed" : order.status;
     const { error } = await db
       .from("orders")
       .update({
         payment_status: "paid",
         payment_method: method,
-        status: "confirmed",
+        status: nextStatus,
         updated_at: now,
       } as never)
       .eq("id", order.id)
@@ -139,6 +142,25 @@ export async function PATCH(req: NextRequest, context: RouteContext) {
           ? `Took cash for order ${order.order_number ?? order.id} (${auth.ctx.branch.name})`
           : `Manually confirmed MoMo for order ${order.order_number ?? order.id} (${auth.ctx.branch.name})`,
       metadata: { orderId: order.id, totalPesewas: order.total_pesewas },
+    });
+    return respondWithOrder(db, order.id);
+  }
+
+  if (body.action === "mark_unpaid") {
+    if (order.payment_status !== "paid") return respondWithOrder(db, order.id);
+    const nextStatus = order.status === "confirmed" ? "pending" : order.status;
+    const { error } = await db
+      .from("orders")
+      .update({ payment_status: "unpaid", status: nextStatus, updated_at: now } as never)
+      .eq("id", order.id);
+    if (error) {
+      console.error("[pos/v1/orders/:id] mark unpaid failed", error);
+      return NextResponse.json({ message: "Could not update the payment" }, { status: 500 });
+    }
+    await logAdminActionWithEmail(auth.ctx.email, {
+      action: "pos.order.mark_unpaid",
+      description: `Marked order ${order.order_number ?? order.id} as not paid on the POS (${auth.ctx.branch.name})`,
+      metadata: { orderId: order.id, totalPesewas: order.total_pesewas, paymentMethod: order.payment_method },
     });
     return respondWithOrder(db, order.id);
   }

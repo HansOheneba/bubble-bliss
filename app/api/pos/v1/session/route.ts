@@ -16,5 +16,7 @@ export async function GET(req: NextRequest) {
       name: ctx.branch.name,
       receipt: ctx.branch.profile,
     },
+    // Lets newer tablets know which back-office actions this server supports.
+    capabilities: ["payment_status_on_create", "any_status", "mark_unpaid"],
   });
 }
